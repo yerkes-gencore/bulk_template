@@ -1,0 +1,13 @@
+FileID  SampleID  Group Batch Individual
+p22074-s001_Cont1_S141 p22074-s001         Cont       B1   S141
+p22074-s002_Cont2_S142 p22074-s002         Cont       B2   S142
+p22074-s003_Cont3_S143 p22074-s003         Cont       B3   S143
+p22074-s004_FAC1_S144 p22074-s004          FAC       B1   S144
+p22074-s005_FAC2_S145 p22074-s005          FAC       B2   S145
+p22074-s006_FAC3_S146 p22074-s006          FAC       B3   S146
+p22074-s007_LiproxposFAC1_S147 p22074-s007 LiproxposFAC       B1   S147
+p22074-s008_LiproxposFAC2_S148 p22074-s008 LiproxposFAC       B2   S148
+p22074-s009_LiproxposFAC3_S149 p22074-s009 LiproxposFAC       B3   S149
+p22074-s010_MTposFAC1_S150 p22074-s010     MTposFAC       B1   S150
+p22074-s011_MTposFAC2_S151 p22074-s011     MTposFAC       B2   S151
+p22074-s012_MTposFAC3_S152 p22074-s012     MTposFAC       B3   S152

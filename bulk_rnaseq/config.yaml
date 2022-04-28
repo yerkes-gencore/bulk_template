@@ -1,0 +1,25 @@
+analysis: p22074_Peijian_Analysis
+reference: GRCm38
+referenceDir: mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a
+alignmentDir:
+- /yerkes-cifs/runs/Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
+STARreadSuffix: _ReadsPerGene.out.tab
+splitChr: _
+splitCnt: 3
+sidMetadata:
+- gcid
+- Group
+- SampID
+dropSamples:
+design: Group # + Batch
+designBaseline: Cont
+groupPairs: # Use group factors from exp_design_template
+- FAC_vs_Cont
+- LiproxposFAC_vs_Cont
+- MTposFAC_vs_Cont
+geneList:
+- 
+pcaMapping:
+  color: Group
+  shape: Batch
+
