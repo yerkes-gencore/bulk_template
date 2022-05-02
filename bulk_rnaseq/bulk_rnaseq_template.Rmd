@@ -27,6 +27,7 @@ library(circlize)
 library(openxlsx)
 library(reshape2)
 library(kableExtra)
+library(rlang)
 source("/yerkes-cifs/runs/home/gktharp/gitrepos/Coding_Club/BulkRNASeq/gktharp/GKTDESeq2Extentions.R")
 counts <- DESeq2::counts
 analysis = list()
@@ -35,12 +36,24 @@ analysis = list()
 ```{r reference_files}
 config <- yaml.load_file("config.yaml")
 analysis$config <- config
-exp.design <- read.table("exp_design_template.txt", header=T, stringsAsFactors = T)
+exp.design <- read.table("exp_design_template.txt", header=T, stringsAsFactors = T, colClasses="factor")
+# a <- function(data, var){
+#   return(data %>% group_by(.data[[var]]))#
+# }
+# for (i in 1:length(analysis$config$sampleGrouping)){
+#   a <- analysis$config$sampleGrouping[[i]]
+#   exp.design <- exp.design %>% arrange(.data[[a]])  
+# }
+# tmp <- analysis$config$sampleGrouping
+# exp.design %>% arrange(.data[[tmp]])
+# exp.design <- do.call(a, as.list(analysis$config$sampleGrouping))
+exp.design <- exp.design %>% arrange(across(all_of(analysis$config$sampleGrouping)))
+knitr::kable((exp.design), position='center', table.attr="style='width:100%;'", format='html') %>%
+    kable_styling(full_width = T)
 ```
 
 ```{r}
-knitr::kable((exp.design), position='center', table.attr="style='width:100%;'", format='html') %>%
-    kable_styling(full_width = T)
+
 ```
 
 ```{r samples}
@@ -102,7 +115,7 @@ analysis$ddsDrop <- DESeqDataSetFromMatrix(countData = DESeq2::counts(analysis$d
 analysis$ddsDrop <- DESeq(analysis$ddsDrop, parallel = TRUE)
 #resultsNames(analysis$ddsDrop)[2:length(resultsNames(analysis$ddsDrop))]
 
-#analysis$resultsDrop <- results(analysis$ddsDrop, name = "Group_LiproxposFAC_vs_Cont", alpha = 0.05)
+#analysis$resultsDrop <- results(analysis$ddsDrop, name = "Group_LiproxposFAC_vs_Cont", alpha = 0.05)3
 #summary(analysis$resultsDrop)
 
 #head(analysis$resultsDrop1[order(analysis$resultsDrop1$pvalue),],11)
@@ -180,11 +193,14 @@ as_tibble(normLogRatios, rownames = NA) %>% pivot_longer(everything(), names_to 
   #overlay <- colnames(analysis$sampleTable)[3:length(colnames(analysis$sampleTable))][i]
   x <- colnames(analysis$sampleTable)[1:(length(colnames(analysis$sampleTable))-2)]
   analysis$pca <- pcaPlotGKT(analysis$vst,
-                                  intgroup = names(colData(analysis$ddsDrop)),
+                                  intgroup = names(colData(analysis$dds)),
                                   xpc = 1, ypc = 2) +
 #  geom_path(aes(group = SubjectID)) 
-  geom_point(aes(color = .data[[analysis$config$pcaMapping$color]], shape= .data[[analysis$config$pcaMapping$shape]]), size = 4) +
-  geom_text_repel(aes(label = paste0(SampleID)),size = 3, hjust = 0.5, vjust = -0.5) +
+  geom_point(aes(color = (if (is.null(analysis$config$pcaMapping$color)) NULL else .data[[analysis$config$pcaMapping$color]]),
+                 shape = (if (is.null(analysis$config$pcaMapping$shape)) NULL else .data[[analysis$config$pcaMapping$shape]])),
+             size = 4) +
+    labs(color=analysis$config$pcaMapping$color, shape=analysis$config$pcaMapping$shape) +
+  geom_text_repel(aes(label = paste0(Individual)),size = 3, hjust = 0.5, vjust = -0.5) +
   scale_x_continuous(expand = c(0.5,0)) +
   theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA"))
   print(analysis$pca)
@@ -214,7 +230,7 @@ if (!is.null(analysis$config$dropSamples[[1]])) {
 write_csv(analysis$sampleTable, path = paste0(analysis$config$analysis,".csv"), col_names = TRUE)
 write_csv(as.data.frame(DESeq2::counts(analysis$dds))%>%rownames_to_column(var = "gene_id"),path = paste0("raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
 
-## request for raw counts with EnsembleIDs
+## request for raw counts with EnsembleIDs 
 ## cant just pull the count table that has been labeled with gene symbols
 ## because symbols that start with a number have been prepended with "X"
 ## and non-unique symbols have been appended with a ".#" index
@@ -237,34 +253,35 @@ tmp <- write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "Ens
 #analysis$config$groupPairs
 wb <- createWorkbook()
 sig.genes <- list()
-layout <- rbind(c(1,NA,NA),
+layout <- rbind(c(1,3,3),
+                c(NA,3,3),
                 c(2,2,2),
                 c(2,2,2),
                 c(2,2,2))
 #sig.genes <- vector(mode='character')
-plotVol <- function(pair){
+pairwise_comparisons <- function(pair){
   f0 <- unlist(str_split(pair, "_"))
-  f1 <- f0[1]
-  f2 <- f0[3]
-  a <- results(analysis$ddsDrop, contrast=c('Group', f1, f2))
-  volData <- a[!is.na(a$padj),]
+  numer_contrast <- f0[1]
+  denom_contrast <- f0[3]
+  result <- results(analysis$ddsDrop, contrast=c('Group', numer_contrast, denom_contrast), filter=maxMinFilter(analysis$ddsDrop, "Group", c(numer_contrast,denom_contrast)))
+  volData <- result[!is.na(result$padj),]
   volData <- volData[order(volData$padj),]
-  summary_out <- capture.output(summary(a))
+  summary_out <- capture.output(summary(result))
   labs <- if (!is.null(analysis$config$geneList[[1]])) analysis$config$geneList else rownames(volData[1:20,])
-  d <- (EnhancedVolcano(volData,
+  volplot1 <- (EnhancedVolcano(volData,
                   x = 'log2FoldChange',
                   y = 'padj',
                   lab = rownames(volData),
                   selectLab=labs,
                   drawConnectors = TRUE,
                   colConnectors = "lightgrey",
-                  pCutoff = 0.1,
+                  pCutoff = analysis$config$alpha,
                   FCcutoff = log2(1.3),
-                  title =NULL,# paste0(f1, " vs ", f2),
+                  title =NULL,# paste0(numer_contrast, " vs ", denom_contrast),
                   caption=NULL,
                   subtitle=NULL
   ) )
-  e <- d + ylim(c(0,20)) + xlim(c(-4,4))
+  volplot2 <- volplot1 + ylim(c(0,100)) + xlim(c(-5,5))
   if (nchar(pair)>31){
     pair <- substr(pair,1,31)
   }
@@ -274,18 +291,40 @@ plotVol <- function(pair){
   #par(mfcol=c(1,2))
   #print(d)
   #print(e)
+  gVolData <- as.mutate.data.frame(result)
+  gVolPlot <- gVolData %>%
+  arrange(!is.na(.data[[colnames(gVolData)[5]]]),desc(.data[[colnames(gVolData)[5]]])) %>%
+  ggplot(aes(x=.data[[colnames(gVolData)[2]]],
+             y=.data[[colnames(gVolData)[3]]])) +
+  geom_vline(aes(xintercept = filterThreshold), color = "goldenrod") +
+  geom_text(aes(x = filterThreshold, y=-5,
+                label = format(filterThreshold, digits=3)),
+            color = "goldenrod", hjust = 0.5, vjust = 1) +
+  guides(color = guide_legend(override.aes = list(size = 2))) +
+  geom_point(aes(color = significant), size = 0.1) +
+  scale_x_log10() +
+  theme_bw() +
+  scale_color_manual(values = c("significant" = "red",
+                                "not_significant" = "green",
+                                "removed" = "blue",
+                                "filterThreshold" = "goldenrod"), drop = FALSE)
+
+
   b <- writeData(wb, sheet=pair, x=as.data.frame(a), rowNames=T)
   #write.xlsx(a, paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), sheetName=pair)
-  sig.data <- volData[volData$padj<0.1,]
-  a <- textGrob(summary_out)
-  grid.arrange(textGrob(paste(summary_out[1:8], collapse="\n")), ggarrange(d, e,common.legend = T), ncol=1, nrow=2, layout_matrix=layout, top=textGrob(pair, gp=gpar(fontsize=25)))#, bottom="padj < 0.1, | FoldChange | > 1.3")#, fig.lab=unlist(out[[i]]$pair))
+  sig.data <- volData[volData$padj<analysis$config$alpha,]
+  #summary_out <- textGrob(summary_out)
+  grid.arrange(textGrob(paste(summary_out[1:8], collapse="\n")), ggarrange(volplot1, volplot2,common.legend = T), gVolPlot, ncol=2, nrow=2, layout_matrix=layout, top=textGrob(pair, gp=gpar(fontsize=25)))#, bottom="padj < 0.1, | FoldChange | > 1.3")#, fig.lab=unlist(out[[i]]$pair))
   #print(out[[i]]$vol1)
   #print(out[[i]]$vol2)
   sig.genes <- c(sig.genes, sig.data@rownames)
-  return(sig.data@rownames)#, vol1=d, vol2=e, summary_out=summary_out, pair=pair))
+  return(list(sig.data@rownames, result, pair))#, vol1=d, vol2=e, summary_out=summary_out, pair=pair))
 }
-out <- lapply(analysis$config$groupPairs, plotVol)
-
+out <- lapply(analysis$config$groupPairs, pairwise_comparisons)
+sig.genes <- unlist(lapply(out, "[", 1))
+results_objs <- lapply(out, "[[", 2)
+results_objs <- lapply(results_objs, as.data.frame)
+pair_order <- unlist(lapply(out, "[", 3))
 #as <- list()
 #bs <- list
 
@@ -296,8 +335,34 @@ out <- lapply(analysis$config$groupPairs, plotVol)
 #   #print(out[[i]]$vol2)
 #   sig.genes <- c(sig.genes, out[[i]]$results)
 # }
-saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
 
+
+# tmp2 <- results_objs[1]
+# tmp_func <- function(df1, df2, pair1, pair2){
+#   merge(df1, df2,)
+# }
+#tmp3 <- vector("list", (length(pair_order)-1))
+
+#tmp4 <- lapply(results_objs, paste(colnames()))
+if (length(pair_order) > 1){
+  for (i in 1:length(pair_order)){
+    colnames(results_objs[[i]]) <- paste(colnames(results_objs[[i]]), pair_order[i], sep = ".")
+    results_objs[[i]]$Geneid <- rownames(results_objs[[i]])
+  }
+  # for (i in 2:(length(pair_order)-1)){
+  #   tmp2 <- merge(results_objs[i-1], results_objs[i], by=0, all=T, suffixes=c(pair_order[i-1], pair_order[i]))
+  #   tmp3[[i-1]] <- tmp2 
+  #}
+  results_df <- Reduce(function(x, y) merge(x, y, by="Geneid"), results_objs)
+  b <- addWorksheet(wb, "All")
+  b <- writeData(wb, sheet="All", x=results_df, rowNames=T)
+}
+
+#tmp4 <- plyr::join_all(results_objs, by=0, type="full")
+
+
+
+saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
 # #for (a in 1:ncol(pairs)){
 # #  p1[a] <- plot_ma(pairs[,a], analysis$ddsDrop)
 # #}
@@ -309,19 +374,19 @@ saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), 
 
 ```{r}
 
-analysis$rldDrop1 <- rlog(analysis$ddsDrop, blind = FALSE, fitType = "parametric")
+analysis$rldDrop <- rlog(analysis$ddsDrop, blind = FALSE, fitType = "parametric")
 
-analysis$assayRlogForGSEA <- assay(analysis$rldDrop1)
+analysis$assayRlogForGSEA <- assay(analysis$rldDrop)
 # filter low/no-expression genes
 analysis$assayRlogForGSEA <- analysis$assayRlogForGSEA[rowMeans(analysis$assayRlogForGSEA)>0,]
 write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"), Description = "na", analysis$assayRlogForGSEA), path = paste0("rlog_forGSEA_", analysis$config$analysis, ".txt"))
-analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop1$Group),length(unique(analysis$rldDrop1$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop1$Group))), collapse = " "), paste0(analysis$rldDrop1$Group, collapse = " "))
+analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop$Group),length(unique(analysis$rldDrop$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "), paste0(analysis$rldDrop$Group, collapse = " "))
 write_lines(analysis$clsLinesGroup, path = paste0("Group_",analysis$config$analysis,".cls"))
 
 ```
 
 
-Heatmap of all significant (Padj < 0.1) genes identified from all treatment comparisons. Expresion values are log transformed and normalized by the average expression in the control group.
+Heatmap of all significant (Padj <`r analysis$config$alpha`) genes identified from all treatment comparisons. Expresion values are log transformed and normalized by the average expression in the control group.
 
 ```{r fig.height=22, fig.width=11}
 
@@ -339,10 +404,10 @@ colnames(rlogSeq1_PlotData) <- str_replace_all(colnames(rlogSeq1_PlotData),"\\."
 # # read in the Sample information for Seq2
 # rlogSeq2_SampleData <- read_csv("rlogSeq2_SampleData_p20067_Ana.csv", col_types = "fffffd")
 # all(match(colnames(rlogSeq2_PlotData),rlogSeq2_SampleData$SampleID)) # check match and order
-tmp <- rlogSeq1_PlotData[rownames(rlogSeq1_PlotData) %in% unlist(out),]
-baseline_means <- rowMeans2(tmp[, analysis$rldDrop1@colData$Group %in% analysis$config$designBaseline])
+hmap <- rlogSeq1_PlotData[rownames(rlogSeq1_PlotData) %in% sig.genes,]
+baseline_means <- rowMeans2(tmp[, analysis$rldDrop@colData$Group %in% analysis$config$designBaseline])
 tmp1 <- tmp - baseline_means
-Heatmap(tmp1, show_row_names = F, heatmap_legend_param = list(title="RLE"))#[,!(analysis$rldDrop1@colData$Group %in% analysis$config$designBaseline)])
+Heatmap(tmp1, show_row_names = F, heatmap_legend_param = list(title="RLE"))#[,!(analysis$rldDrop@colData$Group %in% analysis$config$designBaseline)])
 
 
 ```

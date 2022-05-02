@@ -19,7 +19,11 @@ groupPairs: # Use group factors from exp_design_template
 - MTposFAC_vs_Cont
 geneList:
 - 
-pcaMapping:
+pcaMapping: #should be column names in the exp_design file
   color: Group
   shape: Batch
-
+  label: Individual
+alpha: 0.05
+sampleGrouping: # Order that samples appear on heatmaps. List order of metadata factors (columns in exp_design_template) to sort by
+- Group
+- Batch
