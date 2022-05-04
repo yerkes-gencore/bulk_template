@@ -28,6 +28,7 @@ library(openxlsx)
 library(reshape2)
 library(kableExtra)
 library(rlang)
+#library(plyr)
 source("/yerkes-cifs/runs/home/gktharp/gitrepos/Coding_Club/BulkRNASeq/gktharp/GKTDESeq2Extentions.R")
 counts <- DESeq2::counts
 analysis = list()
@@ -37,88 +38,89 @@ analysis = list()
 config <- yaml.load_file("config.yaml")
 analysis$config <- config
 exp.design <- read.table("exp_design_template.txt", header=T, stringsAsFactors = T, colClasses="factor")
-# a <- function(data, var){
-#   return(data %>% group_by(.data[[var]]))#
-# }
-# for (i in 1:length(analysis$config$sampleGrouping)){
-#   a <- analysis$config$sampleGrouping[[i]]
-#   exp.design <- exp.design %>% arrange(.data[[a]])  
-# }
-# tmp <- analysis$config$sampleGrouping
-# exp.design %>% arrange(.data[[tmp]])
-# exp.design <- do.call(a, as.list(analysis$config$sampleGrouping))
-exp.design <- exp.design %>% arrange(across(all_of(analysis$config$sampleGrouping)))
+exp.design <- exp.design %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
 knitr::kable((exp.design), position='center', table.attr="style='width:100%;'", format='html') %>%
     kable_styling(full_width = T)
 ```
 
-```{r}
-
-```
 
 ```{r samples}
-analysis$sampleIDs = dir(config$alignmentDir)
-analysis$sampleSTARReads <- sapply(analysis$sampleIDs, function(sid) {read_tsv(paste0(
+analysis$samplefileIDs = dir(config$alignmentDir)
+analysis$sampleSTARReads <- sapply(analysis$samplefileIDs, function(sid) {read_tsv(paste0(
   dir(config$alignmentDir, pattern = sid, full.names = TRUE),
   "/",sid,
   config$STARreadSuffix
 ), col_names = c("gene_id","unstranded_count","sense_count","antisense_count"))},
 simplify = FALSE,
 USE.NAMES = TRUE)
-
-# analysis$sampleIDs
-
-#metaComponents <- str_split(analysis$sampleIDs,config$splitChr,config$splitCnt)
-#metaName <- as.name(config$sidMetadata[3])
-#analysis$sampleTable <- data.frame(analysis$sampleIDs,
-#                                          unlist(lapply(metaComponents,"[",1)),
-#                                          unlist(lapply(metaComponents,"[",2)),
-#                                          unlist(lapply(metaComponents,"[",3))
-#                                          )
-#names(analysis$sampleTable) <- c("SampleID",config$sidMetadata)
 analysis$sampleTable <- exp.design
-#analysis$sampleTable <- analysis$sampleTable %>% separate("Group", c("Group", "GroupID"), sep=-1)
-#analysis$sampleTable$Group <- factor(analysis$sampleTable$Group, levels = c("WT","KO"))
+
 
 ```
 
 ```{r dds}
 
 analysis$mapBins <- do.call(cbind,
-                                   sapply(analysis$sampleIDs,                                      function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][c(1:4),]}))
+                                   sapply(analysis$samplefileIDs,                                      function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][c(1:4),]}))
 rownames(analysis$mapBins) <- analysis$sampleSTARReads[[1]][c(1:4),][["gene_id"]]
-
+colnames(analysis$mapBins) <- recode(as.character(unlist(strsplit(analysis$samplefileIDs, ".unstranded_count"))), !!!setNames(exp.design$SampleID, as.character(exp.design$FileID)))
  
-analysis$dds <- raw_counts <- DESeqDataSetFromMatrix(
-  do.call(cbind,sapply(analysis$sampleIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]})),
+raw_counts <- do.call(cbind,sapply(exp.design$FileID, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
+colnames(raw_counts) <- exp.design$SampleID
+analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
   analysis$sampleTable,
   design = ~ 1
 )
-raw_counts <- DESeqDataSetFromMatrix(
-  do.call(cbind,sapply(analysis$sampleIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]})),
-  analysis$sampleTable,
-  design = ~ Group, tidy=FALSE
-)
-colnames(analysis$dds) <- analysis$sampleIDs
+
+raw_counts <- DESeqDataSetFromMatrix(countData = DESeq2::counts(analysis$dds[,!analysis$dds@colData$SampleID %in% analysis$config$dropSamples]), colData = analysis$dds@colData, design = as.formula(paste0("~ ", analysis$config$design)))
+
+
+```
+
+
+# Mapping
+
+Mapping outcomes of reads from each sample. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
+
+```{r mapping, fig.height=8}
+
+rownames_to_column(as_tibble(analysis$mapBins, rownames = NA), var = "map_result") %>%
+  pivot_longer(!map_result, names_to = "SampleID", values_to = "count") %>%
+  #mutate(SampleID = str_sub(SampleID,end = -18)) %>%
+  ggplot(aes(x = SampleID, y = count, fill = factor(map_result, levels = c("N_unmapped","N_multimapping","N_noFeature","N_ambiguous","N_identified")))) +
+  geom_bar(stat = "identity") +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  guides(fill=guide_legend(title="Map Result")) +
+  ggtitle(paste0(analysis$config$analysis," Mapping"))
+  
+  
+
+```
+```{r}
+
+
+
 geneInfoTab <- read_tsv(file.path("/yerkes-cifs/runs/Genome_references/", analysis$config$referenceDir, "geneInfo.tab"), skip = 1, col_names = c("gene_id","gene_symbol","gene_type"))
-#all(match(geneInfoTab$gene_id, analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]))
-rownames(analysis$dds) <- geneInfoTab$gene_symbol
+
+lowcounts <- colSums(assay(raw_counts)) < nrow(geneInfoTab)
+if (sum(lowcounts)>0){
+  cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
+}
+analysis$ddsDrop <- raw_counts[,!lowcounts]
+
+
+
+rownames(analysis$ddsDrop) <- make.names(geneInfoTab$gene_symbol, unique=T)
 # rownames(analysis$dds) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
 analysis$mapBins <- rbind(analysis$mapBins,"N_identified" = colSums2(DESeq2::counts(analysis$dds)))
 
-analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
-analysis$vst <- varianceStabilizingTransformation(analysis$dds,
+#analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
+analysis$vst <- varianceStabilizingTransformation(analysis$ddsDrop,
                                                          blind = FALSE,
                                                          fitType = "parametric")
 
-analysis$ddsDrop <- DESeqDataSetFromMatrix(countData = DESeq2::counts(analysis$dds[,!analysis$dds@colData$SampleID %in% analysis$config$dropSamples]), colData = analysis$dds@colData, design = as.formula(paste0("~ ", analysis$config$design)))
+
 analysis$ddsDrop <- DESeq(analysis$ddsDrop, parallel = TRUE)
-#resultsNames(analysis$ddsDrop)[2:length(resultsNames(analysis$ddsDrop))]
-
-#analysis$resultsDrop <- results(analysis$ddsDrop, name = "Group_LiproxposFAC_vs_Cont", alpha = 0.05)3
-#summary(analysis$resultsDrop)
-
-#head(analysis$resultsDrop1[order(analysis$resultsDrop1$pvalue),],11)
 ```
 
 ## Sample correlation 
@@ -132,26 +134,6 @@ ggplot(cormat, aes(x=Var1, y=Var2, fill=value)) + geom_tile() + scale_fill_gradi
 
 ```
 
-# Mapping
-
-Mapping outcomes of reads from each sample. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
-
-```{r mapping, fig.height=8}
-
-rownames_to_column(as_tibble(analysis$mapBins, rownames = NA), var = "map_result") %>%
-  pivot_longer(!map_result, names_to = "SampleID", values_to = "count") %>%
-  mutate(SampleID = str_sub(SampleID,end = -18)) %>%
-  ggplot(aes(x = SampleID, y = count, fill = factor(map_result, levels = c("N_unmapped","N_multimapping","N_noFeature","N_ambiguous","N_identified")))) +
-  geom_bar(stat = "identity") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
-  guides(fill=guide_legend(title="Map Result")) +
-  ggtitle(paste0(analysis$config$analysis," Mapping"))
-  
-  
-
-```
-
-
 # Relative Log Expression (RLE) normalization
 
 ```{r rle, fig.height=8, fig.width=8}
@@ -160,13 +142,13 @@ rownames_to_column(as_tibble(analysis$mapBins, rownames = NA), var = "map_result
 # plotRLE(counts(analysis$dds[rowMins(counts(analysis$dds))>0,], normalized = TRUE), outline = FALSE, main = "RLE Norm counts", las = 2)
 
 #rawMedians <- if_else(rowMins(counts(analysis$dds))>0,rowMedians(counts(analysis$dds)),NA_real_)
-rawLogCounts <- log(DESeq2::counts(analysis$dds)[rowMins(DESeq2::counts(analysis$dds))>0,])
+rawLogCounts <- log(DESeq2::counts(analysis$ddsDrop)[rowMins(DESeq2::counts(analysis$ddsDrop))>0,])
 rawMedianLogs <- rowMedians(rawLogCounts)
 rawLogRatios <- rawLogCounts - rawMedianLogs
 #rawMedians <- rowMedians(counts(analysis$dds)[rowMins(counts(analysis$dds))>0,])
 #rawLogRatios <- log(counts(analysis$dds)[rowMins(counts(analysis$dds))>0,]) - log(rawMedians)
 
-normLogCounts <- log(DESeq2::counts(analysis$dds, normalized = TRUE)[rowMins(DESeq2::counts(analysis$dds))>0,])
+normLogCounts <- log(DESeq2::counts(analysis$ddsDrop, normalized = TRUE)[rowMins(DESeq2::counts(analysis$ddsDrop))>0,])
 normMedianLogs <- rowMedians(normLogCounts)
 normLogRatios <- normLogCounts - normMedianLogs
 #normMedians <- rowMedians(counts(analysis$dds, normalized = TRUE)[rowMins(counts(analysis$dds))>0,])
@@ -193,7 +175,7 @@ as_tibble(normLogRatios, rownames = NA) %>% pivot_longer(everything(), names_to 
   #overlay <- colnames(analysis$sampleTable)[3:length(colnames(analysis$sampleTable))][i]
   x <- colnames(analysis$sampleTable)[1:(length(colnames(analysis$sampleTable))-2)]
   analysis$pca <- pcaPlotGKT(analysis$vst,
-                                  intgroup = names(colData(analysis$dds)),
+                                  intgroup = names(colData(analysis$ddsDrop)),
                                   xpc = 1, ypc = 2) +
 #  geom_path(aes(group = SubjectID)) 
   geom_point(aes(color = (if (is.null(analysis$config$pcaMapping$color)) NULL else .data[[analysis$config$pcaMapping$color]]),
@@ -206,21 +188,21 @@ as_tibble(normLogRatios, rownames = NA) %>% pivot_longer(everything(), names_to 
   print(analysis$pca)
 #}
 
-
-if (!is.null(analysis$config$dropSamples[[1]])) {
-  print("PCA after dropping samples")
-  analysis$pca <- pcaPlotGKT(analysis$vst[,!analysis$vst$gcid %in% analysis$config$dropSamples],
-                                  intgroup = names(colData(analysis$ddsDrop)),
-                                  xpc = 1, ypc = 2) +
-#  geom_path(aes(group = SubjectID)) +
-  geom_point(aes(color = Group), size = 4) +
-  geom_text_repel(aes(label = paste0(SampleID)),size = 3, hjust = 0.5, vjust = -1) +
-#  geom_path(aes(group = SubjectID)) +
-  scale_x_continuous(expand = c(0.5,0)) +
-  theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA Drop outliers"))
-
-  analysis$pca
-}
+# 
+# if (!is.null(analysis$config$dropSamples[[1]])) {
+#   print("PCA after dropping samples")
+#   analysis$pca <- pcaPlotGKT(analysis$vst[,!analysis$vst$gcid %in% analysis$config$dropSamples],
+#                                   intgroup = names(colData(analysis$ddsDrop)),
+#                                   xpc = 1, ypc = 2) +
+# #  geom_path(aes(group = SubjectID)) +
+#   geom_point(aes(color = Group), size = 4) +
+#   geom_text_repel(aes(label = paste0(SampleID)),size = 3, hjust = 0.5, vjust = -1) +
+# #  geom_path(aes(group = SubjectID)) +
+#   scale_x_continuous(expand = c(0.5,0)) +
+#   theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA Drop outliers"))
+# 
+#   analysis$pca
+# }
 
 
 ```
@@ -228,14 +210,14 @@ if (!is.null(analysis$config$dropSamples[[1]])) {
 ```{r write_tables}
 
 write_csv(analysis$sampleTable, path = paste0(analysis$config$analysis,".csv"), col_names = TRUE)
-write_csv(as.data.frame(DESeq2::counts(analysis$dds))%>%rownames_to_column(var = "gene_id"),path = paste0("raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
+write_csv(as.data.frame(DESeq2::counts(raw_counts))%>%rownames_to_column(var = "gene_id"),path = paste0("raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
 
 ## request for raw counts with EnsembleIDs 
 ## cant just pull the count table that has been labeled with gene symbols
 ## because symbols that start with a number have been prepended with "X"
 ## and non-unique symbols have been appended with a ".#" index
 ## reconstruct ensemble count table
-ensembleRawCount <- do.call(cbind,sapply(analysis$sampleIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
+ensembleRawCount <- do.call(cbind,sapply(analysis$samplefileIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
 rownames(ensembleRawCount) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
 #str(ensembleRawCount)
 tmp <- write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "EnsemblID"),
@@ -249,6 +231,7 @@ tmp <- write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "Ens
 
 
 ```{r, fig.height=8.5, fig.width=11}
+
 #pairs <- utils::combn(unique(analysis$sampleTable$Group),2)
 #analysis$config$groupPairs
 wb <- createWorkbook()
@@ -293,7 +276,7 @@ pairwise_comparisons <- function(pair){
   #print(e)
   gVolData <- as.mutate.data.frame(result)
   gVolPlot <- gVolData %>%
-  arrange(!is.na(.data[[colnames(gVolData)[5]]]),desc(.data[[colnames(gVolData)[5]]])) %>%
+  dplyr::arrange(!is.na(.data[[colnames(gVolData)[5]]]),desc(.data[[colnames(gVolData)[5]]])) %>%
   ggplot(aes(x=.data[[colnames(gVolData)[2]]],
              y=.data[[colnames(gVolData)[3]]])) +
   geom_vline(aes(xintercept = filterThreshold), color = "goldenrod") +
@@ -310,7 +293,7 @@ pairwise_comparisons <- function(pair){
                                 "filterThreshold" = "goldenrod"), drop = FALSE)
 
 
-  b <- writeData(wb, sheet=pair, x=as.data.frame(a), rowNames=T)
+  b <- writeData(wb, sheet=pair, x=as.data.frame(volData), rowNames=T)
   #write.xlsx(a, paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), sheetName=pair)
   sig.data <- volData[volData$padj<analysis$config$alpha,]
   #summary_out <- textGrob(summary_out)
@@ -325,34 +308,12 @@ sig.genes <- unlist(lapply(out, "[", 1))
 results_objs <- lapply(out, "[[", 2)
 results_objs <- lapply(results_objs, as.data.frame)
 pair_order <- unlist(lapply(out, "[", 3))
-#as <- list()
-#bs <- list
 
-# for (i in 1:length(out)){
-#   a <- textGrob(out[[i]]$summary_out)
-#   grid.arrange(textGrob(paste(out[[i]]$summary_out, collapse="\n")), ggarrange(out[[i]]$vol1, out[[i]]$vol2,common.legend = T), ncol=1, nrow=2, layout_matrix=layout)#, bottom="padj < 0.1, | FoldChange | > 1.3")#, fig.lab=unlist(out[[i]]$pair))
-#   #print(out[[i]]$vol1)
-#   #print(out[[i]]$vol2)
-#   sig.genes <- c(sig.genes, out[[i]]$results)
-# }
-
-
-# tmp2 <- results_objs[1]
-# tmp_func <- function(df1, df2, pair1, pair2){
-#   merge(df1, df2,)
-# }
-#tmp3 <- vector("list", (length(pair_order)-1))
-
-#tmp4 <- lapply(results_objs, paste(colnames()))
 if (length(pair_order) > 1){
   for (i in 1:length(pair_order)){
     colnames(results_objs[[i]]) <- paste(colnames(results_objs[[i]]), pair_order[i], sep = ".")
     results_objs[[i]]$Geneid <- rownames(results_objs[[i]])
   }
-  # for (i in 2:(length(pair_order)-1)){
-  #   tmp2 <- merge(results_objs[i-1], results_objs[i], by=0, all=T, suffixes=c(pair_order[i-1], pair_order[i]))
-  #   tmp3[[i-1]] <- tmp2 
-  #}
   results_df <- Reduce(function(x, y) merge(x, y, by="Geneid"), results_objs)
   b <- addWorksheet(wb, "All")
   b <- writeData(wb, sheet="All", x=results_df, rowNames=T)
@@ -363,6 +324,7 @@ if (length(pair_order) > 1){
 
 
 saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
+#rm(wb)
 # #for (a in 1:ncol(pairs)){
 # #  p1[a] <- plot_ma(pairs[,a], analysis$ddsDrop)
 # #}
@@ -391,7 +353,7 @@ Heatmap of all significant (Padj <`r analysis$config$alpha`) genes identified fr
 ```{r fig.height=22, fig.width=11}
 
 # read in the DESeq2 regularized log expression for Seq1
-rlogSeq1_PlotData <- read_tsv("rlog_forGSEA_p22074_Peijian_Analysis.txt") %>% select(-Description) %>% mutate(Name=make.names(Name, unique=T)) %>% column_to_rownames("Name") %>% as.matrix()
+rlogSeq1_PlotData <- read_tsv("rlog_forGSEA_p22074_Peijian_Analysis.txt") %>% select(-Description) %>% mutate(Name=make.names(Name, unique=T)) %>% column_to_rownames("Name") %>% as.matrix() 
 colnames(rlogSeq1_PlotData) <- str_replace_all(colnames(rlogSeq1_PlotData),"\\.","-")
 # read in the Sample information for Seq1
 
@@ -405,9 +367,9 @@ colnames(rlogSeq1_PlotData) <- str_replace_all(colnames(rlogSeq1_PlotData),"\\."
 # rlogSeq2_SampleData <- read_csv("rlogSeq2_SampleData_p20067_Ana.csv", col_types = "fffffd")
 # all(match(colnames(rlogSeq2_PlotData),rlogSeq2_SampleData$SampleID)) # check match and order
 hmap <- rlogSeq1_PlotData[rownames(rlogSeq1_PlotData) %in% sig.genes,]
-baseline_means <- rowMeans2(tmp[, analysis$rldDrop@colData$Group %in% analysis$config$designBaseline])
-tmp1 <- tmp - baseline_means
-Heatmap(tmp1, show_row_names = F, heatmap_legend_param = list(title="RLE"))#[,!(analysis$rldDrop@colData$Group %in% analysis$config$designBaseline)])
+baseline_means <- rowMeans2(hmap[, analysis$rldDrop@colData$Group %in% analysis$config$designBaseline])
+hmap <- hmap - baseline_means
+Heatmap(hmap, show_row_names = F, heatmap_legend_param = list(title="RLE"))#[,!(analysis$rldDrop@colData$Group %in% analysis$config$designBaseline)])
 
 
 ```
@@ -423,7 +385,7 @@ if (!is.null(analysis$config$geneList[[1]])){
   }
   lapply(analysis$config$geneList, plot_genelist)
 }
-
+#plotCounts(analysis$ddsDrop, analysis$config$geneList, intgroup="Group")
 ```
 
 
