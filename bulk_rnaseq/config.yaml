@@ -2,7 +2,8 @@
 analysis: p22074_Peijian_Analysis
 # short name to identify reference genome version, used to label outputs
 reference: GRCm38
-# Reference genome directory
+# Reference genome directory within the parent directory "/yerkes-cifs/runs/Genome_references/" that holds "geneInfo.tab" 
+# Do not specify the parent portion of the path
 referenceDir: mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a 
 # STAR feature counts files directory
 alignmentDir: /yerkes-cifs/runs/Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
@@ -11,21 +12,37 @@ STARreadSuffix: _ReadsPerGene.out.tab
 # Samples to drop, using the same names as the "sample ID" column of the exp_design_template
 dropSamples:
 -
-design: Group + Batch
+# Formula for DESeq2 design. Has not been rigorously tested with multifactor designs. Consider
+# making your design one combined factor as per the vignette: https://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#contrasts
+# Group should always be included as the primary term. Additional terms can be included from the
+# sample metadata by using the column name of the term in that table
+design: Group
 # Level of primary design factor to use as baseline for comparisons in heatmap
 designBaseline: Cont
-groupPairs: # Use group factors from exp_design_template
+# Contrasts to examine, based on levels of the factor(s) used as the design formula.
+# Separate levels with "vs" or "over" and some characters (spaces, underscores, dashes etc)
+# E.g.: Level1_vs_Level2   or   AB over BC
+groupPairs: 
 - FAC_vs_Cont
 - LiproxposFAC_vs_Cont
 - MTposFAC_vs_Cont
+# Character in groupPairs that separates groups (e.g. Group1_vs_Group2 would have _ as the splitChar)
+contrastSplitChar:
+- _
+# Genes of interest to highlight in volcano plots and individual plots
 geneList:
 - PWP1
-pcaMapping: #should be column names in the exp_design file
+# Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
+pcaMapping: 
   color: Group
   shape: Batch
   label: Individual
-alpha: 0.05 #adjusted P value cutoff
+  path:
+  ellipse:
+# Adjusted P value cutoff
+alpha: 0.05
 # Order that samples appear on figures. List order of metadata factors (columns in exp_design_template) to sort by
+# Would not be used if metadata table is made manually
 sampleGrouping: 
 - Group
 - Batch
