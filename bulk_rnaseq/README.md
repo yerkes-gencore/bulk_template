@@ -23,4 +23,4 @@ An example design table
 
 Some data may need to be specifically cast to ensure proper ggplot mapping. E.g. values in Batch may be categorical and should be factors, while continuous values (e.g. "Dosage") may want to be cast as numeric. Most data should be cast as factors.
 
-The order of samples in the exp.design table will be the order samples are presented in figures. Consider using dplyr::arrange to order your table by specific columns
+The order of samples in the exp.design table will be the order samples are presented in figures. Consider using `dplyr::arrange` to order your table by specific columns
