@@ -27,7 +27,7 @@ The collection tab will let you look at individual genesets from your selected d
 X-compare allows you to plot GSEA enrichment for a single geneset for multiple comparisons.
 Heatmaps will generate a heatmap of relative log expression for all samples, focusing on genes from the selected geneset. Filtering the heatmap for N genes will filter by variance of RLE, not by a leading edge union, but should still be useful for distinguishing the most affected genes.
 
-Troubleshooting:
+# Troubleshooting
 If your app unexpectedly crashes, try to rerun the app from Rstudio by pressing run app again. If the green play button was replaced by 'reload app' It is possible that it crashed but R is still executing it. You can either try clicking in the console on the bottom of Rstudio and pressing `esc` or `cntrl+c`, or terminate R and restart (R studio might prompt you if R is not responding when you try to relaunch). 
 If you have issues starting the app, you may have lost connection to Sblab. Make sure you have sblab mounted. If you had to reconnect to the server, you may have to close Rstudio and reopen the app.
 If the app crashes while in full window mode, you might not be able to exit and will be stuck with a blank screen. Use `CMD+tab` to navigate outside the app's shell and try restarting using the above methods. 
