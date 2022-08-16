@@ -1,5 +1,4 @@
 # Shiny app
-```../runs/tools/rshiny/test/steve_copy```
 Open either the `ui.r` or `server.r` file in Rstudio, then click 'run app' in the middle right of rstudio (right next to a green play button).
 Upload an analysis.RData object in the upload tab under analysis data. Yours is `p22136_Stacey_analysis.RData`
 Give the app a few seconds to load the data
