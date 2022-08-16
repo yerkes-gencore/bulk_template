@@ -132,7 +132,7 @@ ui <- fluidPage(
              #   )
              # ),
              ## Samples ----
-             tabPanel("QC",
+             tabPanel("QC", type='hidden',
                       navlistPanel(
                         tabPanel("Read counts",
                                  plotOutput("mapping")
@@ -147,7 +147,7 @@ ui <- fluidPage(
                         widths=c(2,10)
                       )
              ),
-             tabPanel("DGE Analysis",
+             tabPanel("DGE Analysis", type='hidden',
                       fluidRow(
                         sidebarLayout(
                           sidebarPanel(
@@ -195,7 +195,7 @@ ui <- fluidPage(
                         uiOutput("add.selected.button")
                       )
              ),
-             tabPanel("Genes of interest",
+             tabPanel("Genes of interest",type='hidden',
                       tabsetPanel(
                         tabPanel("Boxplot",
                                  sidebarLayout(
@@ -264,7 +264,7 @@ ui <- fluidPage(
                         )
                       )
              ),
-             tabPanel("GSEA",
+             tabPanel("GSEA",type='hidden',
                       tabsetPanel(
                         tabPanel("Overview",
                                  sidebarLayout(
