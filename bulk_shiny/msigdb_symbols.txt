@@ -1,4 +1,0 @@
-Symbol  FileName
-H h.all.v7.5.1.symbols.gmt
-C2  c2.all.v7.5.1.symbols.gmt
-C5  c5.go.bp.v7.5.1.symbols.gmt
