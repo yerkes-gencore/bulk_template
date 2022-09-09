@@ -1,14 +1,14 @@
 ---
-title: "bulk_RNA-seq_analysis"
+title: "bulk_RNAseq_Analysis"
 author: "DTG"
 date: '`r format(file.info("bulk_rnaseq_template.Rmd")$ctime, "%Y-%m-%d")`'
 output: 
-  html_notebook: 
-    code_folding: hide
+  rmdformats::robobook:
+    fig_width: 9
 ---
 
-```{r setup}
-knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4)
 library(tidyverse)
 library(ggforce)
 library(grid)
@@ -28,146 +28,144 @@ library(openxlsx)
 library(reshape2)
 library(kableExtra)
 library(rlang)
+library(forcats)
+library(gtools)
+library(RColorBrewer)
+library(fgsea)
+library(MatrixGenerics)
 #library(plyr)
-source("/yerkes-cifs/runs/home/gktharp/gitrepos/Coding_Club/BulkRNASeq/gktharp/GKTDESeq2Extentions.R")
+
 counts <- DESeq2::counts
+#config <- yaml.load_file("config.yaml")
+source("functions.R")
+```
+
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+## Study overview
+
+```{r reset_analysis_obj, eval=TRUE, include=FALSE}
+# This is moved out of the setup block to avoid accidentally overwriting your
+# analysis object when restarting a session
 analysis = list()
 ```
 
-```{r load_config}
-config <- yaml.load_file("config.yaml")
-analysis$config <- config
-
+```{r load_config, include=FALSE}
+# Store config with results object for record keeping
+analysis$config <- yaml.load_file("config.yaml")
 ```
 
 ```{r sample_metadata_setup}
+## Build your own
+analysis$sampleTable <- data.frame(matrix("", 0, 3, dimnames=list(c(), c("FileID", "SampleID", "Group"))), stringsAsFactors=TRUE)
 
-## Build your own? 
-exp.design <- data.frame(matrix("", 0, 3, dimnames=list(c(), c("FileID", "SampleID", "Group"))), stringsAsFactors=TRUE)
+## Or load from file 
+analysis$sampleTable <- read.table("exp_design_template.txt", header=T, stringsAsFactors = FALSE)
+analysis$sampleTable <- analysis$sampleTable %>% 
+  dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
+analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
-
-exp.design <- read.table("exp_design_template.txt", header=T, stringsAsFactors = FALSE)#, colClasses="factor")
-exp.design <- exp.design %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
-exp.design <- as.data.frame(sapply(exp.design, as.factor))
-
-
-knitr::kable((exp.design), position='center', table.attr="style='width:100%;'", format='html') %>%
+knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
     kable_styling(full_width = TRUE)
-sample_order <- fct_inorder(as.character(exp.design$SampleID))
 
-
-#exp.design$Timepoint <- factor(exp.design$Timepoint)
-#exp.design <- exp.design %>% dplyr::arrange(Individual, Timepoint)
-
-#exp.design$Timepoint <- ordered(exp.design$Timepoint, 0:11)
-#exp.design$Group <- ordered(exp.design$Group, 0:11)
-
-
+# Store the order you'd like samples to appear in figure
+# Order is determined by sampleGrouping parameters in config
+# But you could also manually specify it here if there aren't easy rules
+sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
 ```
 
-
-```{r samples}
-analysis$samplefileIDs = dir(config$alignmentDir)
+```{r read_counts_tables, include=FALSE}
+analysis$samplefileIDs <- dir(file.path(config$rootDir, config$alignmentDir))
+analysis$samplefileIDs <- analysis$samplefileIDs[analysis$samplefileIDs %in% analysis$sampleTable$FileID]
 analysis$sampleSTARReads <- sapply(analysis$samplefileIDs, function(sid) {read_tsv(paste0(
-  dir(config$alignmentDir, pattern = sid, full.names = TRUE),
+  dir(file.path(config$rootDir, config$alignmentDir), pattern = sid, full.names = TRUE),
   "/",sid,
   config$STARreadSuffix
-), col_names = c("gene_id","unstranded_count","sense_count","antisense_count"))},
+), col_names = c("gene_id","unstranded_count","sense_count","antisense_count"),
+  col_types = c(gene_id = col_character(),
+  unstranded_count = col_double(),
+  sense_count = col_double(),
+  antisense_count = col_double()))},
 simplify = FALSE,
 USE.NAMES = TRUE)
-analysis$sampleTable <- exp.design
-
-
 ```
 
-```{r dds}
+```{r dds, include=FALSE}
 analysis$mapBins <- do.call(cbind,
-                                   sapply(analysis$samplefileIDs,                                      function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][c(1:4),]}))
+                            sapply(analysis$samplefileIDs, 
+          function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][c(1:4),]}))
 rownames(analysis$mapBins) <- analysis$sampleSTARReads[[1]][c(1:4),][["gene_id"]]
-colnames(analysis$mapBins) <- recode(as.character(unlist(strsplit(analysis$samplefileIDs, ".unstranded_count"))), !!!setNames(exp.design$SampleID, as.character(exp.design$FileID)))
+colnames(analysis$mapBins) <- recode(as.character(unlist(strsplit(analysis$samplefileIDs, ".unstranded_count"))), !!!setNames(analysis$sampleTable$SampleID, as.character(analysis$sampleTable$FileID)))
  
 raw_counts <- do.call(cbind,sapply(analysis$samplefileIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
-colnames(raw_counts) <- recode(as.character(unlist(strsplit(analysis$samplefileIDs, ".unstranded_count"))), !!!setNames(exp.design$SampleID, as.character(exp.design$FileID)))
+colnames(raw_counts) <- recode(as.character(unlist(strsplit(analysis$samplefileIDs, ".unstranded_count"))), !!!setNames(analysis$sampleTable$SampleID, as.character(analysis$sampleTable$FileID)))
 rownames(analysis$sampleTable) <- analysis$sampleTable$SampleID
 analysis$sampleTable <- analysis$sampleTable[colnames(raw_counts),]
 analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
   analysis$sampleTable,
   design = as.formula(paste0("~ ", analysis$config$design))
 )
-analysis$dds <- analysis$dds[,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
-sample_order <- sample_order[!(sample_order %in% as.factor(analysis$config$dropSamples))]
-sample_order <- droplevels(sample_order)
-#raw_counts <- as.data.frame(counts(analysis$dds))#, colData = analysis$dds@colData, design = as.formula(paste0("~ ", analysis$config$design)))
-#rownames(raw_counts) <- rownames(DESeq2::counts(analysis$dds))
-analysis$mapBins <- analysis$mapBins[,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
 analysis$mapBins <- rbind(analysis$mapBins,"N_identified" = colSums2(DESeq2::counts(analysis$dds)))
-
 ```
 
+## QC {.tabset}
 
-# Mapping
+### Mapping
 
 Mapping outcomes of reads from each sample. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
 
-```{r mapping, fig.height=8}
-
-rownames_to_column(as_tibble(analysis$mapBins, rownames = NA), var = "map_result") %>%
-  pivot_longer(!map_result, names_to = "SampleID", values_to = "count") %>%
-  #mutate(SampleID = str_sub(SampleID,end = -18)) %>%
-  ggplot(aes(x = SampleID, y = count, fill = factor(map_result, levels = c("N_unmapped","N_multimapping","N_noFeature","N_ambiguous","N_identified")))) +
-  geom_bar(stat = "identity") +
-  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
-  guides(fill=guide_legend(title="Map Result")) +
-  ggtitle(paste0(analysis$config$analysis," Mapping")) + aes(fct_inorder(SampleID))
-  
-  
-
+```{r mapping_plot}
+mapping_plot(analysis$mapBins)
 ```
-```{r}
 
+```{r remove_samples}
+if (!is.null(unlist(analysis$config$dropSamples))){
+  out <- paste0("Sample(s)\n", paste0(analysis$config$dropSamples, sep=", ", collapse = ''),"\nbeing removed from downstream analysis per user specification.") 
+  analysis$mapBins <- analysis$mapBins[,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
+  analysis$ddsDrop <- analysis$dds[,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
+  sample_order <- sample_order[!(sample_order %in% as.factor(analysis$config$dropSamples))]
+  cat(out)
+} else {
+  analysis$ddsDrop <- analysis$dds
+}
+sample_order <- droplevels(sample_order)
+```
 
+```{r gene_names, include=FALSE}
+geneInfoTab <- read_tsv(file.path(analysis$config$rootDir, analysis$config$referenceDir, "geneInfo.tab"), skip = 1, col_names = c("gene_id","gene_symbol","gene_type"))
 
-geneInfoTab <- read_tsv(file.path("/yerkes-cifs/runs/Genome_references/", analysis$config$referenceDir, "geneInfo.tab"), skip = 1, col_names = c("gene_id","gene_symbol","gene_type"))
-
-lowcounts <- colSums(assay(analysis$dds)) < nrow(geneInfoTab)
+## Remove samples if there are fewer total fragment counts than there are possible features
+## Somewhat arbitrary lower bound and shouldn't be an issue, but could catch a technical error
+## if data isn't loading correctly (but you should see this in the mapping plot)
+lowcounts <- colSums(assay(analysis$ddsDrop)) < nrow(geneInfoTab)
 if (sum(lowcounts)>0){
   cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
 }
-analysis$ddsDrop <- analysis$dds[,!lowcounts]
+analysis$ddsDrop <- analysis$ddsDrop[,!lowcounts]
 sample_order <- sample_order[!lowcounts]
-
+sample_order <- droplevels(sample_order)
 
 rownames(analysis$ddsDrop) <- make.names(geneInfoTab$gene_symbol, unique=TRUE)
 rownames(raw_counts) <- make.names(geneInfoTab$gene_symbol, unique=TRUE)
-# rownames(analysis$dds) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
+```
 
-#analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
+```{r vst_and_ddsDrop}
 analysis$vst <- varianceStabilizingTransformation(analysis$ddsDrop,
                                                          blind = FALSE,
                                                          fitType = "parametric")
-
-
 analysis$ddsDrop <- DESeq(analysis$ddsDrop, parallel = TRUE)
 ```
 
-## Sample correlation 
+### Relative Log Expression (RLE) normalization
 
-Calculated using normalized transcript counts for all genes
-
-```{r sample_cor_heatmap, fig.width=8, fig.height=6}
-cormat <- cor(DESeq2::counts(analysis$ddsDrop, normalized=T))
-cormat <- melt(cormat)
-cormat$Var1 <- factor(cormat$Var1, levels=sample_order)
-cormat$Var2 <- factor(cormat$Var2, levels=sample_order)
-ggplot(cormat, aes(x=Var1, y=Var2, fill=value)) + geom_tile() + scale_fill_gradient(high="red", low="white")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ theme(axis.title = element_blank()) + labs(fill='Corr') #+ aes(x=as.character(sample_order))
-
-
-```
-
-# Relative Log Expression (RLE) normalization
-
-```{r rle, fig.height=8, fig.width=8}
-rawLogCounts <- log(DESeq2::counts(analysis$ddsDrop)[rowMins(DESeq2::counts(analysis$ddsDrop))>0,])
+```{r rle}
+rawLogCounts <- log(counts(analysis$ddsDrop)[rowMins(counts(analysis$ddsDrop))>0,])
 rawMedianLogs <- rowMedians(rawLogCounts)
 rawLogRatios <- rawLogCounts - rawMedianLogs
 
@@ -176,202 +174,31 @@ normLogCounts <- log(DESeq2::counts(analysis$ddsDrop, normalized = TRUE)[rowMins
 normMedianLogs <- rowMedians(normLogCounts)
 normLogRatios <- normLogCounts - normMedianLogs
 
+analysis$RLE_raw <- RLE_plot(rawLogRatios, 'RLE Raw')
+analysis$RLE_norm <- RLE_plot(normLogRatios, 'RLE Normalized')
 
-as_tibble(rawLogRatios, rownames = NA) %>% pivot_longer(everything(), names_to = "Sample", values_to = "RLE") %>% 
-  ggplot(aes(x=Sample,y=RLE)) +
-  geom_hline(yintercept = 0, color = "red") + geom_violin(draw_quantiles = c(0.25,0.75), trim = TRUE, color = "lightgreen", alpha = 0.1) +
-  geom_boxplot(alpha = 0) + theme_bw() + theme(axis.text.x = element_text(vjust = 0.5,angle = 90),axis.title.x = element_blank(),aspect.ratio = 0.55) + ggtitle("RLE Raw") #+ scale_y_continuous(limits = c(-9,3.25), expand = c(0,0))
-
-as_tibble(normLogRatios, rownames = NA) %>% pivot_longer(everything(), names_to = "Sample", values_to = "RLE") %>% 
-  ggplot(aes(x=Sample,y=RLE)) +
-  geom_hline(yintercept = 0, color = "red") + geom_violin(draw_quantiles = c(0.25,0.75), trim = TRUE, color = "lightgreen", alpha = 0.1) + 
-  geom_boxplot(alpha = 0) + 
-  theme_bw() + theme(axis.text.x = element_text(vjust = 0.5,angle = 90),axis.title.x = element_blank(),aspect.ratio = 0.55) + ggtitle("RLE Normalized") #+ scale_y_continuous(limits = c(-7,5.9), expand = c(0,0)) 
-
+print(analysis$RLE_raw)
+print(analysis$RLE_norm)
 ```
 
 
-# PCA
+### PCA
 
-```{r pca, fig.height=15, fig.width=16}
-
-analysis$pca <- pcaPlotGKT(analysis$vst,
-                                intgroup = names(colData(analysis$vst)),
-                                xpc = 1, ypc = 2) +
-#  geom_path(aes(group = SubjectID)) 
-geom_point(aes(color = (if (is.null(analysis$config$pcaMapping$color)) NULL else .data[[analysis$config$pcaMapping$color]]),
-               shape = (if (is.null(analysis$config$pcaMapping$shape)) NULL else .data[[analysis$config$pcaMapping$shape]])),
-           size = 3) +
-  labs(color=analysis$config$pcaMapping$color, shape=analysis$config$pcaMapping$shape) +
-geom_text_repel(aes(label = 
-                      (if (is.null(analysis$config$pcaMapping$label)) NULL else .data[[analysis$config$pcaMapping$label]])),
-                    size = 3, hjust = 0.5, vjust = -0.5, alpha=0.5) +
-scale_x_continuous(expand = c(0.5,0)) +
-theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA")) +
-  (if (!is.null(analysis$config$pcaMapping$path)){
-    geom_path(aes(linetype=.data[[analysis$config$pcaMapping$path]]))
-  }) +
-# geom_path(aes(linetype=(if (is.null(analysis$config$pcaMapping$path)) NULL else .data[[analysis$config$pcaMapping$path]]))) +
-theme(legend.key.width = unit(1.2, "cm")) +
-#labs(color="Weeks") +
-  (if (!is.null(analysis$config$pcaMapping$ellipse)){
-    stat_ellipse(aes(color=.data[[analysis$config$pcaMapping$ellipse]]), type="norm", level=0.67)
-  }) #, arrow=arrow(ends="last", type="closed", length=unit(0.1, "inches")))
-
+```{r pca, fig.width=12, fig.height=8}
+analysis$pca <- PCA_plot_from_config(analysis)
 print(analysis$pca)
-#}
-
-# 
-# if (!is.null(analysis$config$dropSamples[[1]])) {
-#   print("PCA after dropping samples")
-#   analysis$pca <- pcaPlotGKT(analysis$vst[,!analysis$vst$gcid %in% analysis$config$dropSamples],
-#                                   intgroup = names(colData(analysis$ddsDrop)),
-#                                   xpc = 1, ypc = 2) +
-# #  geom_path(aes(group = SubjectID)) +
-#   geom_point(aes(color = Group), size = 4) +
-#   geom_text_repel(aes(label = paste0(SampleID)),size = 3, hjust = 0.5, vjust = -1) +
-# #  geom_path(aes(group = SubjectID)) +
-#   scale_x_continuous(expand = c(0.5,0)) +
-#   theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA Drop outliers"))
-# 
-#   analysis$pca
-# }
-
-
 ```
 
 ```{r write_tables}
-
 write_csv(analysis$sampleTable, path = paste0(analysis$config$analysis,".csv"), col_names = TRUE)
 write_csv(as.data.frame(raw_counts)%>%rownames_to_column(var = "gene_id"),path = paste0("raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
 
-## request for raw counts with EnsembleIDs 
-## cant just pull the count table that has been labeled with gene symbols
-## because symbols that start with a number have been prepended with "X"
-## and non-unique symbols have been appended with a ".#" index
-## reconstruct ensemble count table
-ensembleRawCount <- do.call(cbind,sapply(analysis$samplefileIDs, function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
+ensembleRawCount <- do.call(cbind,sapply(analysis$samplefileIDs,
+                                         function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
 rownames(ensembleRawCount) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
-#str(ensembleRawCount)
-tmp <- write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "EnsemblID"),
+
+write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "EnsemblID"),
           path = paste0("raw_count_EnsemblID_", analysis$config$reference, analysis$config$analysis, ".csv"),col_names = TRUE)
-
-
-```
-
-
-# Pairwise group comparison results
-
-```{r, fig.height=8.5, fig.width=11}
-#pairs <- utils::combn(unique(analysis$sampleTable$Group),2)
-#analysis$config$groupPairs
-wb <- createWorkbook()
-sig.genes <- list()
-layout <- rbind(c(1,3,3),
-                c(NA,3,3),
-                c(2,2,2),
-                c(2,2,2),
-                c(2,2,2))
-pairwise_comparisons <- function(pair){
-  f0 <- unlist(str_split(pair, analysis$config$contrastSplitChar))
-  numer_contrast <- f0[1]
-  denom_contrast <- f0[3]
-  result <- results(analysis$ddsDrop, contrast=c("Group", numer_contrast, denom_contrast), filter=maxMinFilter(analysis$ddsDrop, "Group", c(numer_contrast,denom_contrast)))
-  volData <- result[!is.na(result$padj),]
-  volData <- volData[order(volData$padj),]
-  summary_out <- capture.output(summary(result))
-  labs <- if (!is.null(analysis$config$geneList[[1]])) analysis$config$geneList else rownames(volData[1:20,])
-  volplot1 <- (EnhancedVolcano(volData,
-                  x = 'log2FoldChange',
-                  y = 'padj',
-                  lab = rownames(volData),
-                  selectLab=labs,
-                  drawConnectors = TRUE,
-                  colConnectors = "lightgrey",
-                  pCutoff = analysis$config$alpha,
-                  FCcutoff = log2(1.3),
-                  title =NULL,# paste0(numer_contrast, " vs ", denom_contrast),
-                  caption=NULL,
-                  subtitle=NULL
-  ) )
-  volplot2 <- volplot1 + ylim(c(0,25)) + xlim(c(-5,5))
-  if (nchar(pair)>31){
-    pair <- substr(pair,1,31)
-  }
-  b <- addWorksheet(wb, pair)
-  gVolData <- as.mutate.data.frame(result)
-  gVolPlot <- gVolData %>%
-  dplyr::arrange(!is.na(.data[[colnames(gVolData)[5]]]),desc(.data[[colnames(gVolData)[5]]])) %>%
-  ggplot(aes(x=.data[[colnames(gVolData)[2]]],
-             y=.data[[colnames(gVolData)[3]]])) +
-  geom_vline(aes(xintercept = filterThreshold), color = "goldenrod") +
-  geom_text(aes(x = filterThreshold, y=-5,
-                label = format(filterThreshold, digits=3)),
-            color = "goldenrod", hjust = 0.5, vjust = 1) +
-  guides(color = guide_legend(override.aes = list(size = 2))) +
-  geom_point(aes(color = significant), size = 0.1) +
-  scale_x_log10() +
-  theme_bw() +
-  scale_color_manual(values = c("significant" = "red",
-                                "not_significant" = "green",
-                                "removed" = "blue",
-                                "filterThreshold" = "goldenrod"), drop = FALSE) + labs(y="Log2FoldChange")
-  b <- writeData(wb, sheet=pair, x=as.data.frame(volData), rowNames=T)
-  sig.data <- volData[volData$padj<analysis$config$alpha,]
-  figure <- arrangeGrob(textGrob(paste(summary_out[1:8], collapse="\n")), ggarrange(volplot1, volplot2,common.legend = T), gVolPlot, ncol=2, nrow=2, layout_matrix=layout, top=textGrob(pair, gp=gpar(fontsize=25)))#, bottom="padj < 0.1, | FoldChange | > 1.3")#, fig.lab=unlist(out[[i]]$pair))
-  sig.genes <- c(sig.genes, sig.data@rownames)
-  return(list(sig.data@rownames, result, pair, figure))#, vol1=d, vol2=e, summary_out=summary_out, pair=pair))
-}
-#pair_order <- analysis$config$groupPairs
-#sig.genes <- 
-# this is intentionally done as a loop to preserve order of comparisons for figures
-# for (pair in analysis$config$groupPairs){
-#   out <- pairwise_comparisons(pair)
-# }
-# out <- list()
-# for (pair in analysis$config$groupPairs){
-#   tmp <- list(pairwise_comparisons(pair))
-#   out <- append(out, tmp)
-# }
-out <- lapply(analysis$config$groupPairs, pairwise_comparisons)
-```
-
-```{r}
-#out <- lapply(analysis$config$groupPairs, pairwise_comparisons)
-sig.genes <- unlist(lapply(out, "[", 1))
-results_objs <- lapply(out, "[[", 2)
-results_objs <- lapply(results_objs, as.data.frame)
-pair_order <- unlist(lapply(out, "[[", 3))
-if (length(pair_order) > 1){
-  for (i in 1:length(pair_order)){
-    colnames(results_objs[[i]]) <- paste(colnames(results_objs[[i]]), pair_order[i], sep = ".")
-    results_objs[[i]]$Geneid <- rownames(results_objs[[i]])
-  }
-  results_df <- Reduce(function(x, y) merge(x, y, by="Geneid"), results_objs)
-  b <- addWorksheet(wb, "All")
-  b <- writeData(wb, sheet="All", x=results_df, rowNames=T)
-}
-#tmp4 <- plyr::join_all(results_objs, by=0, type="full")
-saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
-#rm(wb)
-# #for (a in 1:ncol(pairs)){
-# #  p1[a] <- plot_ma(pairs[,a], analysis$ddsDrop)
-# #}
-# c1 <- apply(pairs, 2, plot_ma, analysis$ddsDrop)
-# d1 <- ggarrange(plotlist=c1, common.legend=T)
-# annotate_figure(d1, bottom="padj < 0.1, | FoldChange | > 1.3")
-```
-
-```{r fig.width=11, fig.height=8.5}
-images <- lapply(out, "[[", 4)
-#grid.arrange(images)
-# for (image in images){
-#   grid.arrange(image)
-# }
-tmp <- lapply(images, grid.arrange)
-```
-
-```{r}
 analysis$rldDrop <- rlog(analysis$ddsDrop, blind = FALSE, fitType = "parametric")
 analysis$assayRlogForGSEA <- assay(analysis$rldDrop)
 # filter low/no-expression genes
@@ -379,41 +206,147 @@ analysis$assayRlogForGSEA <- analysis$assayRlogForGSEA[rowMeans(analysis$assayRl
 write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"), Description = "na", analysis$assayRlogForGSEA), path = paste0("rlog_forGSEA_", analysis$config$analysis, ".txt"))
 analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop$Group),length(unique(analysis$rldDrop$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "), paste0(analysis$rldDrop$Group, collapse = " "))
 write_lines(analysis$clsLinesGroup, path = paste0("Group_",analysis$config$analysis,".cls"))
+
 ```
 
+## DGE {.tabset}
 
-Heatmap of all significant (Padj <`r analysis$config$alpha`) genes identified from all treatment comparisons. Expresion values are log transformed and normalized by the average expression in the control group.
-
-```{r fig.height=22, fig.width=11}
-# read in the DESeq2 regularized log expression for Seq1
-hmap <- analysis$rldDrop[rownames(analysis$rldDrop) %in% sig.genes,]
-baseline_means <- rowMeans2(assay(hmap[,hmap@colData$Group %in% analysis$config$designBaseline]))
-hmap <- assay(hmap) - baseline_means
-Heatmap(hmap, show_row_names = F, heatmap_legend_param = list(title="RLE"), column_order=as.character(sample_order))#[,!(analysis$rldDrop@colData$Group %in% analysis$config$designBaseline)])
+```{r GSEA_setup}
+## read in rlog file
+rlog_for_GSEA <- read.csv(paste0("rlog_forGSEA_", analysis$config$analysis, ".txt"), sep='\t')
+## read GMT files
+gmt.file <- list()
+  for (a in file.path(analysis$config$rootDir, analysis$config$gseaFilesPath, analysis$config$gseaCollections)){#'mh.all.v0.3.symbols.gmt'
+    gmt.file <- append(gmt.file, gmtPathways(file.path(a)))
+  }
 ```
 
-# Individual gene analysis
+```{r run_comparisons}
 
-No genes specified yet
+#### Add comparisons to get results for here as list of two lists: 
+#### first list has the result names for coefficients to compare
+#### second is a list that maps to the first list and says whether to run it as
+#### results(analysis, name=<comparison>) or results(analysis, contrast=c(list(<comparisons)))
+#### these can be very different and are important for multifactor designs
+#### See example below. First list is the names/contrasts. If it is a contrast,
+#### the two factors should be put as a list. A name can just be a character vector
+####  my_comparisons <- list(                           # the whole thing is a list of lists
+####            list('CD8Depleted.TimepointW1',         # the list of comparisons
+####                  list('Timepoint_W7_vs_W0',        # the second member is a contrast, so a list of two names
+####                       'CD8Depleted.TimepointW7'),
+####                       'Timepoint_W1_vs_W0'),       # end of comparisons
+####                  list('name', 'contrast', 'name')) # second list, saying if each member of the first 
+####                                                    # list is a name or a contrast for the results call
+
+my_comparisons <- list(list('Group_FAC_vs_Cont', 'Group_LiproxposFAC_vs_Cont', 'Group_MTposFAC_vs_Cont'),
+                       list('name', 'name', 'name'))
+
+pairwise_comparisons <- function(x, comp, alpha=0.05){
+  ## Generate DESeq2 results objects for contrasts of interest
+  if (comp == 'contrast'){
+    result <- results(analysis$ddsDrop, contrast=x, test='Wald', alpha=alpha)
+  } else if (comp == 'name'){
+    result <- results(analysis$ddsDrop, name=x, test='Wald', alpha=alpha)
+  }
+  result@metadata$contrast <- paste0(x, collapse=' ')
+  return(result)
+}
+
+## Get DESeq2 results for each comparison of interest
+results <- mapply(pairwise_comparisons,my_comparisons[[1]], my_comparisons[[2]])
+wb <- createWorkbook()
+## Convert these result objects to custom class with visualizations, etc
+## option to write out each result as an individual sheet in the workbook
+results <- lapply(results, my_results_transform, wb, write_out=TRUE)
+
+## Name result objects from contrasts
+names(results) <- lapply(results, function(x) x@metadata$contrast)
+
+
+## Write all results to workbook 
+write_output_workbook(wb, results, analysis)
+saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
+```
+
+```{r prepare_results}
+### you can add custom ggplot tracks to the outputs here, or edit datatables
+### Input is the modifided DESeq2 object with the visualizations
+output_results <- function(comp){
+  # Just plaintext summary of the result object
+  summary(results[[comp]])
+  # Fixed window volcano plot
+  volcanoPlot <- results[[comp]]@visualizations$volplot_fixed + labs(caption='Fixed window volcano plot, for comparing global trends across comparisons.')
+  # Interactive datatable of all DGE results for this comp
+  DGEtable <- DT::datatable(data.frame(results[[comp]]) %>% select(baseMean, log2FoldChange, lfcSE, padj) %>% filter(padj < analysis$config$alpha) %>% mutate_if(is.numeric, round, 4) %>% na.omit() %>% rownames_to_column(), rownames = FALSE, caption='DESeq2 output for this comparison, significant genes only', filter='top', autoHideNavigation = TRUE) 
+  # Dotplot of top GSEA pathways
+  gseaDotplot <- gsea_dotplot(results[[comp]]@gsea)
+  # Interactive table of GSEA results
+  gseaTable <- DT::datatable(head(results[[comp]]@gsea[order(results[[comp]]@gsea$pval)] %>% filter(size>10),1000) %>% select(pathway,pval,padj,ES,NES,size,), rownames = FALSE, filter='top', autoHideNavigation = TRUE, caption='GSEA enrichment results, top 1000') %>% formatRound(c('pval','padj', 'ES','NES'), digits=3)
+  
+  return(list(volcanoPlot=volcanoPlot,DGEtable=DGEtable,gseaDotplot=gseaDotplot,gseaTable=gseaTable))
+}
+```
+
+### Comparison 1
 
 ```{r}
-plot_genelist <- function(gene){
-    plotCountsGKT(analysis$ddsDrop,gene, intgroup = analysis$config$design) + geom_sina() + scale_y_log10()
-}
-if (!is.null(analysis$config$geneList[[1]])){
-  tryCatch(
-    {lapply(analysis$config$geneList, plot_genelist)},
-    error=function(mess){
-      message(paste("Gene(s) not found in dataset"))
-    }
-  )
-}
-#plotCounts(analysis$ddsDrop, analysis$config$geneList, intgroup="Group")
+### call results outputs here with output_results(name_of_comparison)
+### comparison names are based on the input lists earlier
+comparison1 <- output_results(my_comparisons[[1]][[1]])
 ```
 
+```{r, fig.height=8}
+## kept separate to allow modified figure size
+comparison1$volcanoPlot
+```
 
-## GSEA
+```{r}
+comparison1$DGEtable
+```
 
-Waiting on confirmation of experimental design
+```{r, fig.height=10}
+comparison1$gseaDotplot
+```
 
+```{r}
+comparison1$gseaTable
+```
 
+### Comparison 2 {.active}
+<!-- You can make this the active tab instead of the first one if you want to highlight certain comp -->
+```{r}
+## Same as before with the next comparison. Repeat for however many comparisons you have
+comparison2 <- output_results( my_comparisons[[1]][[2]])
+```
+
+```{r, fig.height=8}
+comparison2$volcanoPlot
+```
+
+```{r}
+comparison2$DGEtable
+```
+
+```{r, fig.height=10}
+comparison2$gseaDotplot
+```
+
+```{r}
+comparison2$gseaTable
+```
+
+## Genes of interest {.tabset}
+
+These heatmaps show the relative expression (regularized and log2 transformed) of genes for each sample normalized to the baseline (mean expression for pre-treatment samples). Individual samples are grouped within their treatment/timepoint. Below the heatmaps are line plots of the same genes, tracking changes in normalized expression over time.
+
+### Top genes from whole study
+
+```{r, fig.width = 10, fig.height=5}
+## creating an arbitrary genelist
+top_genes <- data.frame(results(analysis$ddsDrop)) %>% filter(!is.na(pvalue)) %>% filter(abs(log2FoldChange)>log2(1.5))
+top_genes <- top_genes[order(top_genes$pvalue),]
+geneList <- (rownames(head(top_genes, 20)))
+
+## Pass in a genelist
+heatmap_from_genelist(geneList)
+```

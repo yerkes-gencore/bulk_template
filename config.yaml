@@ -2,11 +2,13 @@
 analysis: p22074_Peijian_Analysis
 # short name to identify reference genome version, used to label outputs
 reference: GRCm38
-# Reference genome directory within the parent directory "/yerkes-cifs/runs/Genome_references/" that holds "geneInfo.tab" 
-# Do not specify the parent portion of the path
-referenceDir: mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a 
+# root dir is base of mounted file system, might change by machine. Include the 
+# path upto the 'runs/' folder. All subsequent paths should be relative to this root
+rootDir: /Volumes/yerkes/genomelab/illumina/runs/ #/yerkes-cifs/runs/
+# Reference genome directory that holds "geneInfo.tab" 
+referenceDir: Genome_references/mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a 
 # STAR feature counts files directory
-alignmentDir: /yerkes-cifs/runs/Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
+alignmentDir: Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
 # Suffix used to identify read count tables output by STAR
 STARreadSuffix: _ReadsPerGene.out.tab
 # Samples to drop, using the same names as the "sample ID" column of the exp_design_template
@@ -22,7 +24,7 @@ designBaseline: Cont
 # Contrasts to examine, based on levels of the factor(s) used as the design formula.
 # Separate levels with "vs" or "over" and some characters (spaces, underscores, dashes etc)
 # E.g.: Level1_vs_Level2   or   AB over BC
-groupPairs: 
+contrasts: 
 - FAC_vs_Cont
 - LiproxposFAC_vs_Cont
 - MTposFAC_vs_Cont
@@ -46,3 +48,9 @@ alpha: 0.05
 sampleGrouping: 
 - Group
 - Batch
+gseaFilesPath: tools/fGSEA/homo_sapiens
+gseaCollections:
+- c2.cp.v7.5.1.symbols.gmt  
+- c5.go.bp.v7.5.1.symbols.gmt
+- h.all.v7.5.1.symbols.gmt
+
