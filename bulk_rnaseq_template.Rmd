@@ -81,12 +81,12 @@ sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
 ```
 
 ```{r read_counts_tables, include=FALSE}
-analysis$samplefileIDs <- dir(file.path(config$rootDir, config$alignmentDir))
+analysis$samplefileIDs <- dir(file.path(analysis$config$rootDir, analysis$config$alignmentDir))
 analysis$samplefileIDs <- analysis$samplefileIDs[analysis$samplefileIDs %in% analysis$sampleTable$FileID]
 analysis$sampleSTARReads <- sapply(analysis$samplefileIDs, function(sid) {read_tsv(paste0(
-  dir(file.path(config$rootDir, config$alignmentDir), pattern = sid, full.names = TRUE),
+  dir(file.path(analysis$config$rootDir, analysis$config$alignmentDir), pattern = sid, full.names = TRUE),
   "/",sid,
-  config$STARreadSuffix
+  analysis$config$STARreadSuffix
 ), col_names = c("gene_id","unstranded_count","sense_count","antisense_count"),
   col_types = c(gene_id = col_character(),
   unstranded_count = col_double(),
@@ -237,6 +237,9 @@ gmt.file <- list()
 ####                       'Timepoint_W1_vs_W0'),       # end of comparisons
 ####                  list('name', 'contrast', 'name')) # second list, saying if each member of the first 
 ####                                                    # list is a name or a contrast for the results call
+#### see resultsNames(analysis$ddsDrop) for help choosing comparisons
+
+# resultsNames(analysis$ddsDrop)
 
 my_comparisons <- list(list('Group_FAC_vs_Cont', 'Group_LiproxposFAC_vs_Cont', 'Group_MTposFAC_vs_Cont'),
                        list('name', 'name', 'name'))
