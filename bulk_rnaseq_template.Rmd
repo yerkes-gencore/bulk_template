@@ -190,22 +190,23 @@ print(analysis$pca)
 ```
 
 ```{r write_tables}
-write_csv(analysis$sampleTable, path = paste0(analysis$config$analysis,".csv"), col_names = TRUE)
-write_csv(as.data.frame(raw_counts)%>%rownames_to_column(var = "gene_id"),path = paste0("raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
+dir.create("outputs")
+write_csv(analysis$sampleTable, path = paste0("outputs/", analysis$config$analysis,".csv"), col_names = TRUE)
+write_csv(as.data.frame(raw_counts)%>%rownames_to_column(var = "gene_id"),path = paste0("outputs/raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
 
 ensembleRawCount <- do.call(cbind,sapply(analysis$samplefileIDs,
                                          function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
 rownames(ensembleRawCount) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
 
 write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "EnsemblID"),
-          path = paste0("raw_count_EnsemblID_", analysis$config$reference, analysis$config$analysis, ".csv"),col_names = TRUE)
+          path = paste0("outputs/raw_count_EnsemblID_", analysis$config$reference, analysis$config$analysis, ".csv"),col_names = TRUE)
 analysis$rldDrop <- rlog(analysis$ddsDrop, blind = FALSE, fitType = "parametric")
 analysis$assayRlogForGSEA <- assay(analysis$rldDrop)
 # filter low/no-expression genes
 analysis$assayRlogForGSEA <- analysis$assayRlogForGSEA[rowMeans(analysis$assayRlogForGSEA)>0,]
-write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"), Description = "na", analysis$assayRlogForGSEA), path = paste0("rlog_forGSEA_", analysis$config$analysis, ".txt"))
+write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"), Description = "na", analysis$assayRlogForGSEA), path = paste0("outputs/rlog_forGSEA_", analysis$config$analysis, ".txt"))
 analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop$Group),length(unique(analysis$rldDrop$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "), paste0(analysis$rldDrop$Group, collapse = " "))
-write_lines(analysis$clsLinesGroup, path = paste0("Group_",analysis$config$analysis,".cls"))
+write_lines(analysis$clsLinesGroup, path = paste0("outputs/Group_",analysis$config$analysis,".cls"))
 
 ```
 
@@ -268,7 +269,7 @@ names(results) <- lapply(results, function(x) x@metadata$contrast)
 
 ## Write all results to workbook 
 write_output_workbook(wb, results, analysis)
-saveWorkbook(wb, file=paste0(analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
+saveWorkbook(wb, file=paste0("outputs/",analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
 ```
 
 ```{r prepare_results}
