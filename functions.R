@@ -277,7 +277,7 @@ RLE_plot <- function(data, title){
     ggplot(aes(x=Sample,y=RLE)) +
     geom_hline(yintercept = 0, color = "red") + geom_violin(draw_quantiles = c(0.25,0.75), trim = TRUE, color = "lightgreen", alpha = 0.1) +
     geom_boxplot(alpha = 0) + theme_bw() + theme(axis.text.x = element_text(vjust = 0.5,angle = 90),axis.title.x = element_blank(),aspect.ratio = 0.55) + 
-    ggtitle(title) #+ scale_y_continuous(limits = c(-9,3.25), expand = c(0,0))
+    ggtitle(title) + aes(fct_inorder(Sample))#+ scale_y_continuous(limits = c(-9,3.25), expand = c(0,0))
 }
 
 ### PCA plot from config, dependant on pcaPlotGKT data, just adds some overlays
@@ -290,9 +290,8 @@ PCA_plot_from_config <- function(analysis=analysis){
                    shape = (if (is.null(analysis$config$pcaMapping$shape)) NULL else .data[[analysis$config$pcaMapping$shape]])),
                size = 5) +
     labs(color=analysis$config$pcaMapping$color, shape=analysis$config$pcaMapping$shape) +
-    geom_text_repel(aes(label = 
-                          (if (is.null(analysis$config$pcaMapping$label)) NULL else .data[[analysis$config$pcaMapping$label]])),
-                    size = 4, hjust = 0.5, vjust = -0.5, alpha=0.5) +
+    (if (is.null(analysis$config$pcaMapping$label)) NULL else geom_text_repel(aes(label = .data[[analysis$config$pcaMapping$label]]),
+                    size = 4, hjust = 0.5, vjust = -0.5, alpha=0.5)) +
     scale_x_continuous(expand = c(0.5,0)) +
     theme_bw() + ggtitle(paste0(analysis$config$analysis," PCA")) +
     (if (!is.null(analysis$config$pcaMapping$path)){
