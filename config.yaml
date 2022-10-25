@@ -54,4 +54,4 @@ gseaCollections:
 - c2.cp.v7.5.1.symbols.gmt  
 - c5.go.bp.v7.5.1.symbols.gmt
 - h.all.v7.5.1.symbols.gmt
-
+libraryType: unstranded
