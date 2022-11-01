@@ -59,6 +59,24 @@ analysis$ddsDrop <- DESeq(analysis$ddsDrop)
 
 ## DGE {.tabset}
 
+This section of the report analyses gene expression between groups of samples within the study. Changes in gene expression between groups are usually reported on a log2 scale. The significance of a detected change in expression is reported in a raw/nominal p-value and a multiple-testing corrected/adjusted p-value that accounts for the large number of tests conducted in differential gene expression (DGE) and the inherent false positive rate assumed with frequentest p-values.
+
+Each tab has results from a specific comparison within the study. Each tab shows 
+
+1. A summary of significantly differentially expressed genes (DGE)
+
+2. A volcano plot of DGE
+
+3. A table of all significant DGE
+
+4. A dotplot of top GSEA enriched biological pathways
+
+5. A table of top GSEA enriched biological pathways
+
+The order of terms in tab labeling informs how to interpret results. For log-fold change and enrichment, the first listed group is the numerator and the second is the denominator. So in a comparison of X vs Y, a positive log-fold change means the gene is more highly expressed in X, while a negative change means the gene is more highly expressed in Y. enrichment is similar: positive enrichment relates to enrichment in X, and negative enrichment indicates greater enrichment in Y. 
+
+Gene Set Enrichment Analysis (GSEA) is a statistical approach to test systematic changes in groups of genes corresponding to biological pathways. A pathway is generally 'enriched' in one study group if the genes in that pathway are systematically up or down regulated in a manner and magnitude that is unlikely to be due to chance. Read more about GSEA [here](https://www.gsea-msigdb.org/gsea/index.jsp)
+
 ```{r GSEA_setup}
 ## read GMT files
 gmt.file <- list()
@@ -174,7 +192,7 @@ comparison2$gseaTable
 
 ## Genes of interest {.tabset}
 
-These heatmaps show the relative expression (regularized and log2 transformed) of genes for each sample normalized to the baseline (mean expression for pre-treatment samples). Individual samples are grouped within their treatment/timepoint. Below the heatmaps are line plots of the same genes, tracking changes in normalized expression over time.
+These heatmaps show the relative expression (regularized and log2 transformed) of genes for each sample normalized to the baseline (mean expression for pre-treatment samples). Individual samples are grouped within their treatment/timepoint. If you have genes you are interested in seeing from your study, we can plot them here.
 
 ### Top genes from whole study
 
@@ -189,6 +207,8 @@ heatmap_from_genelist(geneList)
 ```
 
 ## GSEA
+
+Top GSEA pathways from this study. If you have specific biological pathways you want to see, you can request them to be plotted here. 
 
 ```{r}
 A.fix <- as.data.frame(analysis$assayRlogForGSEA) %>% rownames_to_column('Name') %>% filter(!duplicated(Name)) %>% column_to_rownames('Name') %>% data.matrix() 

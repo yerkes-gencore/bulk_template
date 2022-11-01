@@ -185,6 +185,28 @@ greg_volplot <- function(result){
   return(gVolPlot)
 }
 
+maxMinFilter <- function(object, intgroup = "condition", comp = c("ctrl","trmt"), thresh = 0)
+{
+  if (!all(intgroup %in% names(colData(object)))) {
+    stop("the argument 'intgroup' should specify columns of colData(dds)")
+  }
+  intgroup.df <- as.data.frame(colData(object)[, intgroup, drop = FALSE])
+  
+  # group <- if (length(intgroup) > 1) {
+  #   interaction(lapply(intgroup, function(factorname) colData(ddsMoTime20034)[[factorname]]), drop = TRUE)
+  #   #    factor(apply(intgroup.df, 1, paste, collapse = " : "))
+  # }
+  # else {
+  group <- colData(object)[[intgroup]]
+  # }
+  if (!all(comp %in% levels(group))) {
+    stop("the argument 'comp' should specify levels of intgroup")
+  }
+  #  if_else(rowMaxs(sapply(c("d0","d30"), function(lvl) rowMins(counts(ddsMoTime20034, normalize = TRUE)[,ddsMoTime20034$Timepoint == lvl]))) > 0,rowMeans2(counts(ddsMoTime20034, normalized = TRUE)),0)
+  if_else(rowMaxs(sapply(comp, function(lvl) rowMins(counts(object, normalize = TRUE)[,group == lvl]))) > thresh,rowMeans2(counts(object, normalized = TRUE)),0)
+}
+
+
 ##### Derrik functions
 
 ### makes a heatmap of the given list of genes, separating samples slightly by group variable
