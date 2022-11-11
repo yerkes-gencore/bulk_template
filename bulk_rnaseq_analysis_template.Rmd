@@ -385,37 +385,36 @@ write_excel_csv(master_table, file.path('outputs', paste0(analysis$config$analys
 
 
 
-```{r}
-A.fix <- as.data.frame(analysis$assayRlogForGSEA) %>% rownames_to_column('Name') %>% filter(!duplicated(Name)) %>% column_to_rownames('Name') %>% data.matrix() 
-gene.labels <- rownames(A.fix)
-sample.names <- colnames(A.fix)
+<!-- ```{r} -->
+<!-- A.fix <- as.data.frame(analysis$assayRlogForGSEA) %>% rownames_to_column('Name') %>% filter(!duplicated(Name)) %>% column_to_rownames('Name') %>% data.matrix()  -->
+<!-- gene.labels <- rownames(A.fix) -->
+<!-- sample.names <- colnames(A.fix) -->
 
-phen_map <- as.factor(plyr::mapvalues(sample.names, from=analysis$ddsDrop@colData$SampleID, to=as.character(analysis$ddsDrop@colData$Group)))
-```
+<!-- phen_map <- as.factor(plyr::mapvalues(sample.names, from=analysis$ddsDrop@colData$SampleID, to=as.character(analysis$ddsDrop@colData$Group))) -->
+<!-- ``` -->
 
 
-```{r}
-comp.num <-  'FAC'
-comp.denom <- 'LiproxposFAC'
-#sample.names[sample.phen=='FAC']
-comp.ind <- c(grep(paste0('^',comp.num,'$'), sample.phen), grep(paste0('^',comp.denom,'$'), sample.phen))#sample.phen %in% comparison
+<!-- ```{r} -->
+<!-- comp.num <-  'FAC' -->
+<!-- comp.denom <- 'LiproxposFAC' -->
+<!-- #sample.names[sample.phen=='FAC'] -->
+<!-- comp.ind <- c(grep(paste0('^',comp.num,'$'), sample.phen), grep(paste0('^',comp.denom,'$'), sample.phen))#sample.phen %in% comparison -->
 
-  
-  
-O <- GSEA.GeneRanking(A[,comp.ind], as.integer(phen_map[comp.ind]), gene.labels, nperm = 1, permutation.type = 0, 
-    sigma.correction = "GeneCluster", fraction = 1, replace = FALSE, 
-    reverse.sign = FALSE, rank.metric = "S2N")
-# order.matrix[, n.starts[nk]:n.ends[nk]] <- O$order.matrix
-# obs.order.matrix[, n.starts[nk]:n.ends[nk]] <- O$obs.order.matrix
-# correl.matrix[, n.starts[nk]:n.ends[nk]] <- O$rnk.matrix
-# obs.correl.matrix[, n.starts[nk]:n.ends[nk]] <- O$obs.rnk.matrix
-ranks <- O$obs.rnk.matrix[O$obs.order.matrix,]
-```
 
-```{r}
-res <- fgseaSimple(pathways=gmt.file,
-                   stats=ranks,
-                   nperm=1000)
-```
 
-  
+<!-- O <- GSEA.GeneRanking(A[,comp.ind], as.integer(phen_map[comp.ind]), gene.labels, nperm = 1, permutation.type = 0,  -->
+<!--     sigma.correction = "GeneCluster", fraction = 1, replace = FALSE,  -->
+<!--     reverse.sign = FALSE, rank.metric = "S2N") -->
+<!-- # order.matrix[, n.starts[nk]:n.ends[nk]] <- O$order.matrix -->
+<!-- # obs.order.matrix[, n.starts[nk]:n.ends[nk]] <- O$obs.order.matrix -->
+<!-- # correl.matrix[, n.starts[nk]:n.ends[nk]] <- O$rnk.matrix -->
+<!-- # obs.correl.matrix[, n.starts[nk]:n.ends[nk]] <- O$obs.rnk.matrix -->
+<!-- ranks <- O$obs.rnk.matrix[O$obs.order.matrix,] -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- res <- fgseaSimple(pathways=gmt.file, -->
+<!--                    stats=ranks, -->
+<!--                    nperm=1000) -->
+<!-- ``` -->
+
