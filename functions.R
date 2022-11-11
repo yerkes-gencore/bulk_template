@@ -282,15 +282,18 @@ GSEA.ReadClsFile <- function(file = "NULL") {
 
 
 ### Mapping results bins plot
-mapping_plot <- function(mapBins=analysis$mapBins){
-rownames_to_column(as_tibble(mapBins, rownames = NA), var = "map_result") %>%
-  pivot_longer(!map_result, names_to = "SampleID", values_to = "count") %>%
+mapping_plot <- function(mapBins=analysis$mapBins, title=FALSE){
+  data <- rownames_to_column(as_tibble(mapBins, rownames = NA), var = "map_result") %>%
+  pivot_longer(!map_result, names_to = "SampleID", values_to = "count") 
+  data$map_result <- unlist(lapply(data$map_result, function(x)toTitleCase(str_split(x, '_')[[1]][2])))
+  data$map_result <- factor(data$map_result, levels = c("Unmapped","Multimapping","noFeature","Ambiguous","Identified"))
   #mutate(SampleID = str_sub(SampleID,end = -18)) %>%
-  ggplot(aes(x = SampleID, y = count, fill = factor(map_result, levels = c("N_unmapped","N_multimapping","N_noFeature","N_ambiguous","N_identified")))) +
+  ggplot(data, aes(x = SampleID, y = count, fill = map_result)) +
   geom_bar(stat = "identity") +
+  scale_fill_manual(values = c('Unmapped' = 'grey', 'Multimapping' = 'orange', 'noFeature' = 'red', 'Ambiguous' = 'yellow', 'Identified' = '#00CC33' )) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
-  guides(fill=guide_legend(title="Map Result")) +
-  ggtitle(paste0(analysis$config$analysis," Mapping"))  + aes(fct_inorder(SampleID))+ labs(x="Sample")
+  guides(fill=guide_legend(title="Map Result"))  + aes(fct_inorder(SampleID))+ labs(x="Sample", y='Number of reads') +
+    (if (title){ ggtitle(paste0(analysis$config$analysis," Mapping")) } else NULL)
 }
 
 ### RLE plots
