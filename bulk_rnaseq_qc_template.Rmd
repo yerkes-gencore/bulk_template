@@ -106,6 +106,10 @@ raw_counts <- do.call(cbind,sapply(analysis$sampleTable$FileID, function(sid){an
 colnames(raw_counts) <- recode(as.character(unlist(strsplit(analysis$sampleTable$FileID, paste0(".", analysis$config$libraryType, "_count")))), !!!setNames(analysis$sampleTable$SampleID, as.character(analysis$sampleTable$FileID)))
 rownames(analysis$sampleTable) <- analysis$sampleTable$SampleID
 analysis$sampleTable <- analysis$sampleTable[colnames(raw_counts),]
+
+## safety check to make sure metadata and samples are properly associated
+stopifnot(colnames(raw_counts) == analysis$sampleTable$SampleID)
+
 analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
   analysis$sampleTable,
   design = as.formula( ~ 1)
