@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4, dev='png')
 library(tidyverse)
 library(ggforce)
 library(grid)
@@ -67,8 +67,7 @@ analysis$sampleTable <- data.frame(matrix("", 0, 3, dimnames=list(c(), c("FileID
 
 ## Or load from file 
 analysis$sampleTable <- read.table("exp_design_template.txt", header=T, stringsAsFactors = FALSE)
-analysis$sampleTable <- analysis$sampleTable %>% 
-  dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
+#analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
 analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
 knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
@@ -144,12 +143,13 @@ geneInfoTab <- read_tsv(file.path(analysis$config$rootDir, analysis$config$refer
 ## Somewhat arbitrary lower bound and shouldn't be an issue, but could catch a technical error
 ## if data isn't loading correctly (but you should see this in the mapping plot)
 lowcounts <- colSums(assay(analysis$ddsDrop)) < nrow(geneInfoTab)
-if (sum(lowcounts)>0){
-  cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
-}
-analysis$ddsDrop <- analysis$ddsDrop[,!lowcounts]
-sample_order <- sample_order[!lowcounts]
-sample_order <- droplevels(sample_order)
+stopifnot(!sum(lowcounts)>0)
+# if (sum(lowcounts)>0){
+#   cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
+# }
+# analysis$ddsDrop <- analysis$ddsDrop[,!lowcounts]
+# sample_order <- sample_order[!lowcounts]
+# sample_order <- droplevels(sample_order)
 
 rownames(analysis$ddsDrop) <- make.names(geneInfoTab$gene_symbol, unique=TRUE)
 rownames(raw_counts) <- make.names(geneInfoTab$gene_symbol, unique=TRUE)
@@ -213,5 +213,9 @@ write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.]
 analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop$Group),length(unique(analysis$rldDrop$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "), paste0(analysis$rldDrop$Group, collapse = " "))
 write_lines(analysis$clsLinesGroup, path = paste0("outputs/Group_",analysis$config$analysis,".cls"))
 
+```
+
+```{r}
+saveRDS(analysis, 'analysis_post_QC.Rds')
 ```
 

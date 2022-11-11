@@ -45,9 +45,9 @@ pcaMapping:
 alpha: 0.05
 # Order that samples appear on figures. List order of metadata factors (columns in exp_design_template) to sort by
 # Would not be used if metadata table is made manually
-sampleGrouping: 
-- Group
-- Batch
+# sampleGrouping: 
+# - Group
+# - Batch
 # GSEA 
 gseaFilesPath: tools/fGSEA/homo_sapiens
 gseaCollections:
