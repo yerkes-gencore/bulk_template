@@ -48,6 +48,25 @@ source("functions.R")
 }
 </style>
 
+```{r}
+analysis <- readRDS('analysis_post_QC.Rds')
+analysis$config <- yaml.load_file("config.yaml")
+
+
+## need to make within group individual tags to account for individual differences
+## doesn't work to just pass the individual tag in the smple table (linear combination of factors)
+# for (group in analysis$sampleTable$Group){
+#   members <- unique(analysis$sampleTable %>% filter(Group == group) %>% select(Individual))
+#   indices <- analysis$sampleTable$Group == group
+#   analysis$sampleTable$GroupID[indices] <- plyr::mapvalues(
+#     analysis$sampleTable$Individual[indices],
+#     from = members$Individual,
+#     to = 1:nrow(members)
+#   )
+# }
+analysis$sampleTable <- data.frame(lapply(analysis$sampleTable, as.factor))
+```
+
 ## QC {.tabset}
 
 ### PCA
@@ -312,6 +331,58 @@ tmp2$pathway <- wrap_underscore_strings_balance(tmp2$pathway,36)
     labs(x="Comparison", y="Gene set", color = "Normalized\nenrichment\nscore", size="Nom p-val", title="Top Pathways") +  scale_radius(name="NOM p-val", range=c(1,8), breaks=-log10(c(0.1,0.01,0.001,0.0001)), labels=c(0.1,0.01,0.001,0.0001)) 
 
 ```
+
+```{r}
+results_of_interest <- data.frame(comp = c(
+  'Group_FAC_vs_Cont',
+  'Group_LiproxposFAC_vs_Cont',
+  'Group_MTposFAC_vs_Cont'
+), label = c(
+  'FAC_vs_Cont',
+  'LiproxposFAC_vs_Cont',
+  'MTposFAC_vs_Cont'
+))
+
+master_table <- data.frame(baseMean = results[[1]]$baseMean, row.names = rownames(results[[1]]))
+for (i in 1:nrow(results_of_interest)){
+  comp <- results_of_interest$comp[i]
+  label <- results_of_interest$label[i]
+  res <- as.data.frame(results[[comp]]) %>% select(c(log2FoldChange,lfcSE, pvalue, padj)) %>% rename(log2FoldChange = 'Log2 fold change' , lfcSE = 'Log fold change standard error', pvalue = 'P value Wald test', padj = 'Benjamini-Hochberg corrected p value') %>% rename_with(~ paste0(label,':\n', .x))
+  master_table <- cbind(master_table, res)
+}
+master_table <- master_table %>% rename(baseMean = 'mean of normalized counts' ) %>% rownames_to_column('Gene')
+
+write_excel_csv(master_table, file.path('outputs', paste0(analysis$config$analysis, '_DESeq2_results.csv')))
+```
+
+```{r}
+results_of_interest <- data.frame(comp = c(
+  'Group_FAC_vs_Cont',
+  'Group_LiproxposFAC_vs_Cont',
+  'Group_MTposFAC_vs_Cont'
+), label = c(
+  'FAC_vs_Cont',
+  'LiproxposFAC_vs_Cont',
+  'MTposFAC_vs_Cont'
+))
+master_table <- as.data.frame(t(as.data.frame(lapply(gmt.file, length))))
+colnames(master_table) <- 'size'
+master_table <- master_table %>% rownames_to_column('pathway')
+#master_table <- data.frame(size = results[[1]]@gsea$size, pathway = results[[1]]@gsea$pathway)
+for (i in 1:nrow(results_of_interest)){
+  comp <- results_of_interest$comp[i]
+  label <- results_of_interest$label[i]
+  res <- results[[comp]]@gsea %>% select(pathway,pval, padj, NES) %>% column_to_rownames('pathway') %>% rename(pval = 'p-value', padj = 'Benjamin-Hochberg adjusted p-value', NES='Normalized enrichment score') %>% rename_with( ~ paste0(label, ':\n', .x)) %>% rownames_to_column('pathway')
+  master_table <- merge(master_table, res, by='pathway', all=TRUE)
+}
+
+master_table$source <- unlist(lapply(master_table$pathway, function(x){str_split(x, '_')[[1]][1]}))
+
+master_table <- master_table %>% relocate(pathway, source, size)
+write_excel_csv(master_table, file.path('outputs', paste0(analysis$config$analysis, '_GSEA_results.csv')))
+```
+
+
 
 
 ```{r}

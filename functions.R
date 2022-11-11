@@ -234,6 +234,31 @@ heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=an
           col=colorRamp2(c(-4, 0, 4), c("blue", "white", "red")))
 }
 
+### Make dotplot from fGSEA result, showing top n pathways
+gsea_dotplot <- function(res, Source = NULL, sig_only = FALSE, n=20, min_size = 5){
+  ### Make dotplot from fGSEA result, showing top n pathways
+  tmp <- res %>% arrange(pval, desc(size)) %>% mutate(perc=100*lengths(leadingEdge)/size) %>% mutate(name=paste0(wrap_underscore_strings_balance(pathway,36), "\nn=",size)) %>%
+    filter(size >= min_size)
+  if (!is.null(Source)){
+    tmp <- tmp %>% filter(source %in% Source)
+  }
+  if (sig_only){
+    tmp <- tmp %>% filter(padj<sig_cutoff)
+  }
+  toppaths <- rbind(head(tmp ,n=n))
+  
+  toppaths$name <- factor(toppaths$name)
+  ggplot(toppaths) + geom_point(aes(x=perc, y=name, size=-log10(pval), color=NES)) +
+    scale_color_gradient2(low="blue", mid="white",high="red", midpoint=0, breaks=c(-2,-1,0,1,2), limits=c(min(toppaths$NES,-1), max(toppaths$NES,1))) +
+    theme_classic(11) +
+    theme(panel.grid.major = element_line(colour = "grey92"),
+          panel.grid.minor = element_line(colour = "grey92"),
+          panel.grid.major.y = element_line(colour = "grey92"),#element_blank(),
+          panel.grid.minor.y = element_line(colour = "grey92")) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    labs(x="% of genes in leading edge", y="Gene set", color = "Normalized\nenrichment\nscore", size="Nom p-val", title="Top enriched pathways", caption='GSEA p-value calculations are not continuous,\nthere may be several or many pathways with the same p-value\nn = number of genes in pathway') +  scale_radius(name="NOM p-val", range=c(1,8), breaks=-log10(c(0.5,0.1,0.01,0.001)), limits=c(0,3), labels=c(0.5,0.1,0.01,0.001)) + scale_y_discrete(limits=toppaths$name)
+}
+
 
 ### Read Cls File for fGSEA
 GSEA.ReadClsFile <- function(file = "NULL") {
