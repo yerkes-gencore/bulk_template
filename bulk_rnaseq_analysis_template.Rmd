@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 8, fig.height = 4)
 library(tidyverse)
 library(ggforce)
 library(grid)
@@ -48,7 +48,25 @@ source("functions.R")
 }
 </style>
 
+## QC {.tabset}
+
+### PCA
+
+```{r, fig.height=6, fig.width=8}
+print(analysis$pca)
+```
+
+### Sample Info
+
 ```{r}
+knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
+    kable_styling(full_width = TRUE)
+```
+
+```{r}
+## one last safety check to make sure metadata and samples are properly associated
+stopifnot(colnames(analysis$ddsDrop) == analysis$sampleTable$SampleID)
+
 analysis <- readRDS('analysis_post_QC.Rds')
 analysis$ddsDrop <- DESeqDataSetFromMatrix(counts(analysis$ddsDrop),
                                            analysis$sampleTable,
@@ -77,6 +95,49 @@ The order of terms in tab labeling informs how to interpret results. For log-fol
 
 Gene Set Enrichment Analysis (GSEA) is a statistical approach to test systematic changes in groups of genes corresponding to biological pathways. A pathway is generally 'enriched' in one study group if the genes in that pathway are systematically up or down regulated in a manner and magnitude that is unlikely to be due to chance. Read more about GSEA [here](https://www.gsea-msigdb.org/gsea/index.jsp)
 
+***
+
+### Overview
+
+```{r, fig.height = 4, fig.width=8}
+# timecourse_comparison_overview <- function(time, alpha=0.05){
+#   
+#   a <- results(analysis$ddsDrop, alpha=alpha, contrast=list(c(paste0('Time_D', time, '_vs_D0'), paste0('GroupsamRNA.TimeD', time))), test = 'Wald', filter = maxMinFilter(analysis$ddsDrop, intgroup = 'PCA.elipse', comp = c(paste0('samRNA_D', time), 'samRNA_D0')))
+#   b <- nrow(as.data.frame(a) %>% filter(padj<alpha))
+#   a <- results(analysis$ddsDrop, alpha = alpha, name=paste0("Time_D",time,"_vs_D0"), test="Wald",
+#                                          filter = maxMinFilter(analysis$ddsDrop,
+#                                          intgroup = 'PCA.elipse',
+#                                          comp = c(paste0('LNP-RNA_D',time),"LNP-RNA_D0"))) 
+#   d <- nrow(as.data.frame(a) %>% filter(padj<alpha))# %>% filter(log2FoldChange<0))
+#   return(list(samRNA=b, LNP.RNA=d))
+# }
+# 
+# res <- lapply(list('1','2','4','7'), timecourse_comparison_overview)
+# res <- as.data.frame(lapply(res, unlist), col.names=paste0('D', c(1,2,4,7)))
+# #rownames(res) <- c('samRNA', 'LNP-RNA')
+# res <- melt(res %>% rownames_to_column('DIR'), id.vars='DIR')
+# res$variable <- as.numeric(gsub('D', '', res$variable))
+# ggplot(res, aes(x=variable,y=value, group=DIR, color=DIR)) + geom_line() + labs(x="Days after intervention", y="# of significantly diff. expressed genes", color="Treatment group", title="DGE at each day compared to pre-infection", caption="DGE is calculated on comparing individuals within a treatment to the pre-treatment state (D0)") + theme_minimal() + theme(legend.position=c(0.9,.8)) + scale_x_continuous(breaks=c(1,2,4,7))
+```
+
+
+```{r, fig.height = 4, fig.width=8}
+# timecourse_comparison_overview <- function(time, alpha=0.05){
+#   a <- results(analysis$ddsDrop, alpha=alpha, name=paste0("GroupsamRNA.TimeD",time), test="Wald", filter = maxMinFilter(analysis$ddsDrop, intgroup = 'PCA.elipse', comp = c(paste0('samRNA_D',time), 'samRNA_D0')))
+#   b <- nrow(as.data.frame(a) %>% filter(padj<alpha))
+#   return(b)
+# }
+# 
+# res <- lapply(list('1','2','4','7'), timecourse_comparison_overview)
+# res <- as.data.frame(lapply(res, unlist), col.names=paste0('D', c(1,2,4,7)))
+# #rownames(res) <- c('samRNA', 'LNP-RNA')
+# res <- melt(res %>% rownames_to_column('DIR'), id.vars='DIR')
+# res$variable <- as.numeric(gsub('D', '', res$variable))
+# ggplot(res, aes(x=variable,y=value)) + geom_line() + labs(x="Days after intervention", y="# of significantly diff. expressed genes", title="DGE comparing LNP-RNA to samRNA groups at each collection date", caption="This shows significant interaction effects of time and treatment at each timepoint") + theme_minimal() + theme(legend.position=c(0.9,.8)) + scale_x_continuous(breaks=c(1,2,4,7))
+```
+
+###
+
 ```{r GSEA_setup}
 ## read GMT files
 gmt.file <- list()
@@ -96,31 +157,32 @@ gmt.file <- list()
   
 my_comparisons <- list('Group_FAC_vs_Cont', 'Group_LiproxposFAC_vs_Cont', 'Group_MTposFAC_vs_Cont')
 
-pairwise_comparisons <- function(x, alpha=0.05){
+## groups to include for greg's filter function, specific to each comparison
+filter_on_list <- list(c('FAC', 'Cont'),
+                       c('LiproxposFAC', 'Cont'),
+                       c('MTposFAC', 'Cont'))
+                       
+pairwise_comparisons <- function(x, filt_groups, intgroup, alpha=0.05){
   ## Generate DESeq2 results objects for contrasts of interest
   if (class(x) == 'list'){
-    result <- results(analysis$ddsDrop, contrast=x, test='Wald', alpha=alpha)
+    result <- results(analysis$ddsDrop, contrast=x, test='Wald', alpha=alpha, filter = maxMinFilter(analysis$ddsDrop, intgroup = intgroup, comp = filt_groups))
   } else if (class(x) == 'character'){
-    result <- results(analysis$ddsDrop, name=x, test='Wald', alpha=alpha)
+    result <- results(analysis$ddsDrop, name=x, test='Wald', alpha=alpha, filter = maxMinFilter(analysis$ddsDrop, intgroup = intgroup, comp = filt_groups))
   }
-  result@metadata$contrast <- paste0(x, collapse='_over_')
+  result@metadata$contrast <- paste0(unlist(x), collapse='_')
   return(result)
 }
 
 ## Get DESeq2 results for each comparison of interest
-results <- lapply(my_comparisons, pairwise_comparisons)
-wb <- createWorkbook()
+## intgroup specifies which metadata column your filter_on_list refers to
+results <- mapply(pairwise_comparisons, my_comparisons, filter_on_list, intgroup = 'Group')
+
 ## Convert these result objects to custom class with visualizations, etc
-## option to write out each result as an individual sheet in the workbook
-results <- lapply(results, my_results_transform, wb, write_out=TRUE)
+results <- lapply(results, my_results_transform, wb)
 
 ## Name result objects from contrasts
 names(results) <- lapply(results, function(x) x@metadata$contrast)
 
-
-## Write all results to workbook 
-write_output_workbook(wb, results, analysis)
-saveWorkbook(wb, file=paste0("outputs/",analysis$config$analysis, "_DESeq2_results.xlsx"), overwrite=T)
 ```
 
 ```{r prepare_results}
@@ -130,65 +192,64 @@ output_results <- function(comp){
   # Just plaintext summary of the result object
   summary(results[[comp]])
   # Fixed window volcano plot
-  volcanoPlot <- results[[comp]]@visualizations$volplot_fixed + labs(caption='Fixed window volcano plot, for comparing global trends across comparisons.')
+  volcanoPlot <- results[[comp]]@visualizations$volplot_fixed + labs(caption='Cutoffs for significance\np-value of 0.05\n1.3 fold-change')
   # Interactive datatable of all DGE results for this comp
-  DGEtable <- DT::datatable(data.frame(results[[comp]]) %>% select(baseMean, log2FoldChange, lfcSE, padj) %>% filter(padj < analysis$config$alpha) %>% mutate_if(is.numeric, round, 4) %>% na.omit() %>% rownames_to_column(), rownames = FALSE, caption='DESeq2 output for this comparison, significant genes only', filter='top', autoHideNavigation = TRUE) 
-  # Dotplot of top GSEA pathways
+  dge_data <- data.frame(results[[comp]]) %>% select(baseMean, log2FoldChange, lfcSE, padj) %>% filter(padj < analysis$config$alpha) %>% mutate(baseMean=round(baseMean), log2FoldChange = round(log2FoldChange,2), lfcSE = round(lfcSE, 2), padj=round(padj,4)) %>% na.omit() %>% rownames_to_column()
+  DGEtable <- DT::datatable(dge_data, rownames = FALSE, colnames = c('Gene', 'Base mean expression', 'Log2 fold change', 'Fold change std. error', 'Adj. p-value'), caption='DESeq2 output for this comparison, significant genes only', filter='top', autoHideNavigation = TRUE,extensions = c('Buttons', 'Scroller'),  options = list(
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv'),
+    deferRender = TRUE
+  )) 
+  # Dotplot of top hallmark GSEA pathways
   gseaDotplot <- gsea_dotplot(results[[comp]]@gsea)
-  # Interactive table of GSEA results
-  gseaTable <- DT::datatable(head(results[[comp]]@gsea[order(results[[comp]]@gsea$pval)] %>% filter(size>10),1000) %>% select(pathway,pval,padj,ES,NES,size,), rownames = FALSE, filter='top', autoHideNavigation = TRUE, caption='GSEA enrichment results, top 1000') %>% formatRound(c('pval','padj', 'ES','NES'), digits=3)
   
-  return(list(volcanoPlot=volcanoPlot,DGEtable=DGEtable,gseaDotplot=gseaDotplot,gseaTable=gseaTable))
+  # Interactive table of GSEA results
+  gsea_data <- results[[comp]]@gsea %>% filter(size>5) %>% arrange(pval) %>% group_by(source) %>% slice_head(n=25) %>% select(pathway, source, pval,padj,NES,size) %>% arrange(pval)
+  gseaTable <- DT::datatable(gsea_data, rownames = FALSE, filter='top', autoHideNavigation = TRUE, caption='GSEA enrichment results, top from each source') %>% formatRound(c('pval','padj','NES'), digits=3)
+  
+  geneList <- rownames(head(data.frame(results[[comp]]) %>% filter(!is.na(pvalue)) %>% filter(padj<analysis$config$alpha) %>% filter(abs(log2FoldChange)>log2(1.5)) %>% arrange(pvalue), 30))
+  
+  topGenes <- heatmap_from_genelist(geneList, 'Group', 'Cont', data=analysis$rldDrop)
+  
+  return(list(volcanoPlot=volcanoPlot,DGEtable=DGEtable,gseaDotplot=gseaDotplot,gseaTable=gseaTable, topGenes= topGenes))
 }
 ```
 
-### Comparison 1
+### Comp1
+
+`r paste0(unlist(my_comparisons[[1]]), collapse="_")`
 
 ```{r}
 ### call results outputs here with output_results(name_of_comparison)
 ### comparison names are based on the input lists earlier
-comparison1 <- output_results(my_comparisons[[1]][[1]])
+comparison <- output_results(paste0(unlist(my_comparisons[[1]]), collapse="_"))
+comparison$volcanoPlot
+comparison$DGEtable
+comparison$topGenes
+comparison$gseaDotplot
+comparison$gseaTable
+
 ```
 
-```{r, fig.height=8}
-## kept separate to allow modified figure size
-comparison1$volcanoPlot
-```
 
-```{r}
-comparison1$DGEtable
-```
-
-```{r, fig.height=10}
-comparison1$gseaDotplot
-```
-
-```{r}
-comparison1$gseaTable
-```
-
-### Comparison 2 {.active}
+### Comp2
 <!-- You can make this the active tab instead of the first one if you want to highlight certain comp -->
-```{r}
-## Same as before with the next comparison. Repeat for however many comparisons you have
-comparison2 <- output_results( my_comparisons[[1]][[2]])
-```
 
-```{r, fig.height=8}
-comparison2$volcanoPlot
-```
+`r paste0(unlist(my_comparisons[[2]]), collapse="_")`
 
 ```{r}
-comparison2$DGEtable
+### call results outputs here with output_results(name_of_comparison)
+### comparison names are based on the input lists earlier
+comparison <- output_results(paste0(unlist(my_comparisons[[2]]), collapse="_"))
+comparison$volcanoPlot
+comparison$DGEtable
+comparison$topGenes
+comparison$gseaDotplot
+comparison$gseaTable
+
 ```
 
-```{r, fig.height=10}
-comparison2$gseaDotplot
-```
-
-```{r}
-comparison2$gseaTable
-```
+***
 
 ## Genes of interest {.tabset}
 
@@ -203,12 +264,55 @@ top_genes <- top_genes[order(top_genes$pvalue),]
 geneList <- (rownames(head(top_genes, 20)))
 
 ## Pass in a genelist
-heatmap_from_genelist(geneList)
+heatmap_from_genelist(geneList, baseline_grouping = 'Group', baseline = 'Cont')
 ```
+
+***
 
 ## GSEA
 
-Top GSEA pathways from this study. If you have specific biological pathways you want to see, you can request them to be plotted here. 
+Top GSEA pathways from this study. If you have specific biological pathways you want to see, you can request them to be plotted here.
+
+```{r, fig.width=7, fig.height=9}
+tests <- data.frame(x = c(
+  'Group_FAC_vs_Cont',
+  'Group_LiproxposFAC_vs_Cont',
+  'Group_MTposFAC_vs_Cont'
+), name = c(
+  'FAC_vs_Cont',
+  'LiproxposFAC_vs_Cont',
+  'MTposFAC_vs_Cont'
+))
+
+## number to pull from each comparison
+n <- 5
+bytmp <- lapply(tests$x, function(x) {
+  a <- results[[x]]@gsea
+  #a <- a %>% mutate(test=((-log10(pval))*abs(NES)))
+  head(a %>% arrange(pval), n)$pathway
+} )
+tmp <- lapply(tests$x, function(x) {
+  a <- results[[x]]@gsea
+  #a <- a %>% mutate(test=((-log10(pval))*abs(NES)))
+  a %>% filter(pathway %in% unlist(bytmp))
+} )
+tmp2 <- data.table::rbindlist(tmp, idcol=TRUE)
+
+tmp2$`.id` <- plyr::mapvalues(tmp2$`.id`, from= 1:nrow(tests), to = tests$name)
+tmp2$pathway <- wrap_underscore_strings_balance(tmp2$pathway,36)
+
+  ggplot(tmp2) + geom_point(aes(x=`.id`, y=pathway, size=-log(pval), color=NES)) +
+    scale_color_gradient2(low="blue", mid="white",high="red", midpoint=0, breaks=c(-2,-1,0,1,2), limits=c(min(tmp2$NES,-1), max(tmp2$NES,1))) +
+    theme_classic(11) +
+    theme(panel.grid.major = element_line(colour = "grey92"),
+          panel.grid.minor = element_line(colour = "grey92"),
+          panel.grid.major.y = element_line(colour = "grey92"),#element_blank(),
+          panel.grid.minor.y = element_line(colour = "grey92")) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    labs(x="Comparison", y="Gene set", color = "Normalized\nenrichment\nscore", size="Nom p-val", title="Top Pathways") +  scale_radius(name="NOM p-val", range=c(1,8), breaks=-log10(c(0.1,0.01,0.001,0.0001)), labels=c(0.1,0.01,0.001,0.0001)) 
+
+```
+
 
 ```{r}
 A.fix <- as.data.frame(analysis$assayRlogForGSEA) %>% rownames_to_column('Name') %>% filter(!duplicated(Name)) %>% column_to_rownames('Name') %>% data.matrix() 

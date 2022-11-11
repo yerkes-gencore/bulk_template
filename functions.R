@@ -210,14 +210,14 @@ maxMinFilter <- function(object, intgroup = "condition", comp = c("ctrl","trmt")
 ##### Derrik functions
 
 ### makes a heatmap of the given list of genes, separating samples slightly by group variable
-heatmap_from_genelist <- function(geneList, data=analysis$rldDrop){
+heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=analysis$rldDrop){
   ### makes a heatmap of the given list of genes, separating samples slightly by group variable
   ## data should be of type DESeqTransform
   hmap <- data[rownames(data) %in% geneList,
                !colnames(data) %in% analysis$config$dropSamples]
-  slices <- as.numeric(hmap@colData$Group)
-  labels <- levels(hmap@colData$Group)[unique(slices)]
-  baseline <- rowMedians(assay(hmap[,hmap@colData$Group %in% analysis$config$designBaseline]))
+  slices <- as.numeric(as.factor(hmap@colData$Group))
+  labels <- levels(as.factor(hmap@colData$Group))[unique(slices)]
+  baseline <- rowMedians(assay(hmap[,as.character(hmap@colData[[baseline_grouping]]) %in% baseline]))
   hmap <- assay(hmap) - baseline
   Heatmap(hmap, show_row_names = TRUE, heatmap_legend_param = list(title="log2 fold\ndifference\nfrom\nmedian\nweek 0\nexpression"),border="black",column_order=colnames(hmap),
           #  width = ncol(hmap)*unit(5, "mm"), 
@@ -232,24 +232,6 @@ heatmap_from_genelist <- function(geneList, data=analysis$rldDrop){
                                                               labels_gp = gpar(col = "black", fontsize = 10), labels_rot=70, height=unit(2,"cm"))),
           column_gap=unit(2, "mm"),
           col=colorRamp2(c(-4, 0, 4), c("blue", "white", "red")))
-}
-
-### Make dotplot from fGSEA result, showing top n pathways
-gsea_dotplot <- function(res, n=20){
-  ### Make dotplot from fGSEA result, showing top n pathways
-  tmp <- res[order(res$pval),] %>% mutate(perc=100*lengths(leadingEdge)/size) %>% mutate(name=paste0(wrap_underscore_strings_balance(pathway,36), "\nn=",size))
-  toppaths <- rbind(head(tmp%>% filter(ES>0), n=round(n/2)), head(tmp %>% filter(ES<0), n=round(n/2)))
-  
-  toppaths$name <- factor(toppaths$name)
-  ggplot(toppaths) + geom_point(aes(x=perc, y=name, size=-log10(pval), color=NES)) +
-    scale_color_gradient2(low="blue", mid="white",high="red", midpoint=0, breaks=c(-2,-1,0,1,2), limits=c(min(toppaths$NES,-1), max(toppaths$NES,1))) +
-    theme_classic(11) +
-    theme(panel.grid.major = element_line(colour = "grey92"),
-          panel.grid.minor = element_line(colour = "grey92"),
-          panel.grid.major.y = element_line(colour = "grey92"),#element_blank(),
-          panel.grid.minor.y = element_line(colour = "grey92")) +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    labs(x="% of genes in leading edge", y="Gene set", color = "Normalized\nenrichment\nscore", size="Nom p-val", title="Top enriched pathways", caption='GSEA p-value calculations are not continuous,\nthere may be several or many pathways with the same p-value\nn = number of genes in pathway') +  scale_radius(name="NOM p-val", range=c(1,8), breaks=-log10(c(0.5,0.1,0.01,0.001)), limits=c(0,3), labels=c(0.5,0.1,0.01,0.001)) + scale_y_discrete(limits=toppaths$name)
 }
 
 
@@ -378,31 +360,32 @@ make_worksheet <- function(result, wb){
   writeData(wb, sheet=pair, x=as.data.frame(volData), rowNames=TRUE)
 }
 
-write_output_workbook <- function(wb, results, analysis){
-  change_colnames <- function(x){
-    a <- rownames_to_column(as.data.frame(x), var="Gene")
-    colnames(a) <- c("Gene", "baseMean (mean of normalized counts)", "log2FoldChange (Log2 fold change MLE)", "lfcSE (Log fold change standard error)", "stat","pvalue (Wald test p-value)", "padj (BH adjusted p-values)")
-    a
-  }
-  merge_tables <- lapply(results, change_colnames)
-  suffixes <- paste0(".", names(merge_tables))
-  res <- merge_tables[[1]]
-  for (i in head(seq_along(merge_tables),-1)){
-    res <- merge(res, merge_tables[[i+1]], all=TRUE,
-                 suffixes = suffixes[i:(i++1)], by="Gene")
-  }
-  res <- res %>% select(-contains("stat"))
-  addWorksheet(wb, "all")
-  writeData(wb, sheet="all", x=res, rowNames=FALSE)
-  
-  tmp <- analysis$rldDrop
-  baseline <- rowMeans(assay(tmp[,tmp@colData$Group %in% analysis$config$designBaseline]))
-  tmp <- assay(tmp) - baseline
-  addWorksheet(wb, "rle")
-  writeData(wb, sheet="rle", x= tmp, rowNames=TRUE)
-}
+## Deprecated
+# write_output_workbook <- function(wb, results, analysis){
+#   change_colnames <- function(x){
+#     a <- rownames_to_column(as.data.frame(x), var="Gene")
+#     colnames(a) <- c("Gene", "baseMean (mean of normalized counts)", "log2FoldChange (Log2 fold change MLE)", "lfcSE (Log fold change standard error)", "stat","pvalue (Wald test p-value)", "padj (BH adjusted p-values)")
+#     a
+#   }
+#   merge_tables <- lapply(results, change_colnames)
+#   suffixes <- paste0(".", names(merge_tables))
+#   res <- merge_tables[[1]]
+#   for (i in head(seq_along(merge_tables),-1)){
+#     res <- merge(res, merge_tables[[i+1]], all=TRUE,
+#                  suffixes = suffixes[i:(i++1)], by="Gene")
+#   }
+#   res <- res %>% select(-contains("stat"))
+#   addWorksheet(wb, "all")
+#   writeData(wb, sheet="all", x=res, rowNames=FALSE)
+#   
+#   tmp <- analysis$rldDrop
+#   baseline <- rowMeans(assay(tmp[,tmp@colData$Group %in% analysis$config$designBaseline]))
+#   tmp <- assay(tmp) - baseline
+#   addWorksheet(wb, "rle")
+#   writeData(wb, sheet="rle", x= tmp, rowNames=TRUE)
+# }
 
-my_results_transform <- function(result, wb, write_out=TRUE){
+my_results_transform <- function(result, wb){
   setClass(
     ## custom class for storing results data
     "myDESRclass",
@@ -411,9 +394,6 @@ my_results_transform <- function(result, wb, write_out=TRUE){
   ) -> myDESRclass
   ## Convert results object to new class and generate all outputs
   result <- as(result, "myDESRclass")
-  if (write_out){
-    make_worksheet(result, wb)
-  }
   result@visualizations$summary <- capture.output(summary(result))
   result@visualizations$volplot <- generate_volplot(result)
   result@visualizations$volplot_fixed <- generate_volplot(result) + ylim(c(0,25)) + xlim(c(-5,5))
@@ -425,8 +405,8 @@ my_results_transform <- function(result, wb, write_out=TRUE){
   #                       result@visualizations$greg_volplot,
   #                       ncol=2, nrow=2, layout_matrix=layout,
   #                       top=textGrob(result@metadata$contrast, gp=gpar(fontsize=25)))#, bottom="padj < 0.1, | FoldChange | > 1.3")#, fig.lab=unlist(out[[i]]$pair))
-  result@gsea <- run_fgsea(result, gmt.file, nperm=1000)
-  
+  result@gsea <- run_fgsea(result, gmt.file, nperm=10000)
+  result@gsea$source <- unlist(lapply(result@gsea$pathway, function(x){str_split(x, '_')[[1]][1]}))
   volData <- result[!is.na(result$padj),]
   volData <- volData[order(volData$padj),]
   result@sig.genes <-  volData[volData$padj<analysis$config$alpha,]@rownames
