@@ -19,8 +19,10 @@ dropSamples:
 # Group should always be included as the primary term. Additional terms can be included from the
 # sample metadata by using the column name of the term in that table
 design: Group
+### CONTRASTS DOES NOT WORK FOR NOW, HAVE TO EDIT MANUALLY IN ANALYSIS SCRIPT
 # Level of primary design factor to use as baseline for comparisons in heatmap
 designBaseline: Cont
+### CONTRASTS DOES NOT WORK FOR NOW, HAVE TO EDIT MANUALLY IN ANALYSIS SCRIPT
 # Contrasts to examine, based on levels of the factor(s) used as the design formula.
 # Separate levels with "vs" or "over" and some characters (spaces, underscores, dashes etc)
 # E.g.: Level1_vs_Level2   or   AB over BC
