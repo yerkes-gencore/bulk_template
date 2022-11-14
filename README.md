@@ -21,7 +21,7 @@ An example design table
 |p22074-s008_LiproxposFAC2_S148 |	p22074-s008	| LiproxposFAC	| LiproxposFAC	| LiproxposFAC_S148 |
 |p22074-s012_MTposFAC3_S152     |	p22074-s012	| MTposFAC      |	MTposFAC |	MTposFAC_S152 |
 | … | … | … | … | … |
-| #Required, unique and specific based on file names | #Required, unique, anything	| #Required, non unique	| #Not required, anything	| #not required, anything |
+| #Required, unique and specific based on file names | #Required, unique, anything	| #Required, non unique	| #Required, non unique	| #Required, anything |
 				
 				
 
