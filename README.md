@@ -15,10 +15,10 @@ Additional metadata can be included in additional columns. Those columns can be 
 
 An example design table
 
-|FileID  	| SampleID |  	Group |	Batch 	| Individual |
+|FileID  	| SampleID |  	Group |	Intgroup 	| Label |
 | --- | --- | --- | --- | --- |
-|p22074-s007_LiproxposFAC1_S147	| p22074-s007	| LiproxposFAC  |	1 |	S147 |
-|p22074-s008_LiproxposFAC2_S148 |	p22074-s008	| LiproxposFAC	| 2	| S148 |
+|p22074-s007_LiproxposFAC1_S147	| p22074-s007	| LiproxposFAC  |	LiproxposFAC |	LiproxposFAC_S147 |
+|p22074-s008_LiproxposFAC2_S148 |	p22074-s008	| LiproxposFAC	| LiproxposFAC	| LiproxposFAC_S148 |
 |p22074-s012_MTposFAC3_S152     |	p22074-s012	| MTposFAC      |	3 |	S152 |
 | … | … | … | … | … |
 | #Required, unique and specific based on file names | #Required, unique, anything	| #Required, non unique	| #Not required, anything	| #not required, anything |
