@@ -445,6 +445,7 @@ run_fgsea <- function(result, gmt.file=gmt.file, nperm=1000){
   tmp1 <- result$stat
   names(tmp1) <- rownames(result)
   tmp1 <- tmp1[!is.na(tmp1)]
+  tmp1 <- sort(tmp1, decreasing=TRUE)
   res <- fgseaSimple(pathways=gmt.file,
                      stats=tmp1,
                      nperm=nperm)
