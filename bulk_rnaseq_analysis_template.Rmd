@@ -36,7 +36,6 @@ library(MatrixGenerics)
 #library(plyr)
 
 counts <- DESeq2::counts
-#config <- yaml.load_file("config.yaml")
 source("functions.R")
 ```
 
@@ -49,8 +48,8 @@ source("functions.R")
 </style>
 
 ```{r}
-analysis <- readRDS('analysis_post_QC.Rds')
-analysis$config <- yaml.load_file("config.yaml")
+analysis <- readRDS('saved_objects/analysis_post_QC.Rds')
+#analysis$config <- yaml.load_file("config.yaml")
 
 
 ## need to make within group individual tags to account for individual differences
@@ -86,7 +85,6 @@ knitr::kable((analysis$sampleTable), position='center', table.attr="style='width
 ## one last safety check to make sure metadata and samples are properly associated
 stopifnot(colnames(analysis$ddsDrop) == analysis$sampleTable$SampleID)
 
-analysis <- readRDS('analysis_post_QC.Rds')
 analysis$ddsDrop <- DESeqDataSetFromMatrix(counts(analysis$ddsDrop),
                                            analysis$sampleTable,
                                            design = as.formula(paste0("~ ", analysis$config$design)))
@@ -382,7 +380,14 @@ master_table <- master_table %>% relocate(pathway, source, size)
 write_excel_csv(master_table, file.path('outputs', paste0(analysis$config$analysis, '_GSEA_results.csv')))
 ```
 
-
+```{r, eval = FALSE, include = FALSE}
+analysis_shiny <- analysis[c('mapBins', 'sampleTable', 'config', 'ddsDrop', 'RLE_norm', 'RLE_raw', 'pca', 'rldDrop')]
+comparisons_table <- read.csv('config/comparisons.txt', sep='\t')
+analysis_shiny$comparisons_table <- comparisons_table
+analysis_shiny$config$designBaselineCategory <- 'Time'
+analysis_shiny$config$designBaselineValue <- 'D0'
+saveRDS(analysis_shiny, file='saved_objects/p22167_Tiffany_Analysis.RDS')
+```
 
 
 <!-- ```{r} -->

@@ -58,7 +58,7 @@ analysis = list()
 
 ```{r load_config, include=FALSE}
 # Store config with results object for record keeping
-analysis$config <- yaml.load_file("config.yaml")
+analysis$config <- yaml.load_file("config/config.yaml")
 ```
 
 ```{r sample_metadata_setup}
@@ -224,6 +224,6 @@ write_lines(analysis$clsLinesGroup, path = paste0("outputs/Group_",analysis$conf
 ```
 
 ```{r}
-saveRDS(analysis, 'analysis_post_QC.Rds')
+saveRDS(analysis, 'saved_objects/analysis_post_QC.Rds')
 ```
 

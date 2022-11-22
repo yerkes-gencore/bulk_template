@@ -1,0 +1,5 @@
+Name	ComparisonTerms	GregFilterIntgroup	GregFilterTerms
+samRNA D1 vs D0	"Time_D1_vs_D0, GroupsamRNA.TimeD1"	Intgroup	"samRNA_D1, samRNA_D0"
+samRNA D2 vs D0	"Time_D2_vs_D0, GroupsamRNA.TimeD2"	Intgroup	"samRNA_D2, samRNA_D0"
+samRNA D4 vs D0	"Time_D4_vs_D0, GroupsamRNA.TimeD4"	Intgroup	"samRNA_D4, samRNA_D0"
+samRNA D7 vs D0	"Time_D7_vs_D0, GroupsamRNA.TimeD7"	Intgroup	"samRNA_D7, samRNA_D0"
