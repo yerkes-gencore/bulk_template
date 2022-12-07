@@ -210,7 +210,7 @@ maxMinFilter <- function(object, intgroup = "condition", comp = c("ctrl","trmt")
 ##### Derrik functions
 
 ### makes a heatmap of the given list of genes, separating samples slightly by group variable
-heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=analysis$rldDrop){
+heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=analysis$rldDrop, scale_min=-4, scale_max=4){
   ### makes a heatmap of the given list of genes, separating samples slightly by group variable
   ## data should be of type DESeqTransform
   hmap <- data[rownames(data) %in% geneList,
@@ -220,8 +220,8 @@ heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=an
   baseline <- rowMedians(assay(hmap[,as.character(hmap@colData[[baseline_grouping]]) %in% baseline]))
   hmap <- assay(hmap) - baseline
   Heatmap(hmap, show_row_names = TRUE, heatmap_legend_param = list(title="log2 fold\ndifference\nfrom\nmedian\nweek 0\nexpression"),border="black",column_order=colnames(hmap),
-          #  width = ncol(hmap)*unit(5, "mm"), 
-          # height = nrow(hmap)*unit(5, "mm"),
+          width = ncol(hmap)*unit(5, "mm"), 
+          height = nrow(hmap)*unit(5, "mm"),
           rect_gp = gpar(color="black"),
           column_title=" ",
           cluster_rows=FALSE,
@@ -231,7 +231,7 @@ heatmap_from_genelist <- function(geneList, baseline_grouping, baseline, data=an
                                                               labels = labels, 
                                                               labels_gp = gpar(col = "black", fontsize = 10), labels_rot=70, height=unit(2,"cm"))),
           column_gap=unit(2, "mm"),
-          col=colorRamp2(c(-4, 0, 4), c("blue", "white", "red")))
+          col=colorRamp2(c(scale_min, 0, scale_max), c("blue", "white", "red")))
 }
 
 ### Make dotplot from fGSEA result, showing top n pathways
