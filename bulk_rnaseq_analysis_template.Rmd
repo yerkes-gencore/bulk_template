@@ -291,43 +291,40 @@ heatmap_from_genelist(geneList, baseline_grouping = 'Group', baseline = 'Cont')
 Top GSEA pathways from this study. If you have specific biological pathways you want to see, you can request them to be plotted here.
 
 ```{r, fig.width=7, fig.height=9}
-tests <- data.frame(x = c(
-  'Group_FAC_vs_Cont',
-  'Group_LiproxposFAC_vs_Cont',
-  'Group_MTposFAC_vs_Cont'
-), name = c(
-  'FAC_vs_Cont',
-  'LiproxposFAC_vs_Cont',
-  'MTposFAC_vs_Cont'
-))
-
-## number to pull from each comparison
-n <- 5
-bytmp <- lapply(tests$x, function(x) {
+gsea_plot_data <- lapply(names(results), function(x) {
   a <- results[[x]]@gsea
-  #a <- a %>% mutate(test=((-log10(pval))*abs(NES)))
-  head(a %>% arrange(pval), n)$pathway
+  head(a %>% arrange(pval), 3)$pathway
 } )
-tmp <- lapply(tests$x, function(x) {
+
+gsea_plot_data <- lapply(names(results), function(x) {
   a <- results[[x]]@gsea
-  #a <- a %>% mutate(test=((-log10(pval))*abs(NES)))
-  a %>% filter(pathway %in% unlist(bytmp))
+  a %>% filter(pathway %in% unlist(gsea_plot_data))
 } )
-tmp2 <- data.table::rbindlist(tmp, idcol=TRUE)
+names(gsea_plot_data) <- names(results)
+gsea_plot_data <- data.table::rbindlist(gsea_plot_data, idcol='ID')
+#tmp3 <- unlist(lapply(names(results), function(x) paste0(strsplit(results[[x]]@metadata$contrast, "_")[[1]][2:3], collapse=" over ")))
+#tmp2$`.id` <- plyr::mapvalues(tmp2$`.id`, from= 1:10, to = names(results))
+gsea_plot_data$pathway <- wrap_underscore_strings_balance(gsea_plot_data$pathway,36)
+gsea_plot_data <- gsea_plot_data %>%
+  separate(ID, c("ID"), extra = 'drop', sep=' ') %>%
+  mutate(ID = substr(ID, 6, 100))
 
-tmp2$`.id` <- plyr::mapvalues(tmp2$`.id`, from= 1:nrow(tests), to = tests$name)
-tmp2$pathway <- wrap_underscore_strings_balance(tmp2$pathway,36)
-
-  ggplot(tmp2) + geom_point(aes(x=`.id`, y=pathway, size=-log(pval), color=NES)) +
-    scale_color_gradient2(low="blue", mid="white",high="red", midpoint=0, breaks=c(-2,-1,0,1,2), limits=c(min(tmp2$NES,-1), max(tmp2$NES,1))) +
-    theme_classic(11) +
-    theme(panel.grid.major = element_line(colour = "grey92"),
-          panel.grid.minor = element_line(colour = "grey92"),
-          panel.grid.major.y = element_line(colour = "grey92"),#element_blank(),
-          panel.grid.minor.y = element_line(colour = "grey92")) +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-    labs(x="Comparison", y="Gene set", color = "Normalized\nenrichment\nscore", size="Nom p-val", title="Top Pathways") +  scale_radius(name="NOM p-val", range=c(1,8), breaks=-log10(c(0.1,0.01,0.001,0.0001)), labels=c(0.1,0.01,0.001,0.0001)) 
-
+ggplot(gsea_plot_data) + 
+  geom_point(aes(x=ID, y=pathway, size=-log(pval), color=NES)) +
+  scale_color_gradient2(low="blue", mid="white",high="red", midpoint=0,
+                        breaks=c(-2,-1,0,1,2), limits=c(min(gsea_plot_data$NES,-1),
+                                                        max(gsea_plot_data$NES,1))) +
+  theme_classic(11) +
+  theme(panel.grid.major = element_line(colour = "grey92"),
+        panel.grid.minor = element_line(colour = "grey92"),
+        panel.grid.major.y = element_line(colour = "grey92"),#element_blank(),
+        panel.grid.minor.y = element_line(colour = "grey92")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(x="Comparison", y="Gene set", color = "Normalized\nenrichment\nscore",
+       size="Nom p-val", title="Top Pathways") +
+  scale_radius(name="NOM p-val", range=c(1,8),
+               breaks=-log10(c(0.1,0.01,0.001,0.0001)),
+               labels=c(0.1,0.01,0.001,0.0001))
 ```
 
 ```{r}

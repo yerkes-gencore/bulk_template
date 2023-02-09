@@ -39,8 +39,8 @@ geneList:
 # Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
 pcaMapping: 
   color: Group
-  shape: Batch
-  label: Individual
+  shape: Intgroup
+  label: 
   path:
   ellipse:
 # Adjusted P value cutoff
