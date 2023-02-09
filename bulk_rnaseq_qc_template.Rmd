@@ -66,7 +66,7 @@ analysis$config <- yaml.load_file("config/config.yaml")
 analysis$sampleTable <- data.frame(matrix("", 0, 3, dimnames=list(c(), c("FileID", "SampleID", "Group"))), stringsAsFactors=TRUE)
 
 ## Or load from file 
-analysis$sampleTable <- read.table("exp_design_template.txt", header=T, stringsAsFactors = FALSE)
+analysis$sampleTable <- read.table("config/exp_design_template.txt", header=T, stringsAsFactors = FALSE)
 #analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
 analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
@@ -79,28 +79,64 @@ knitr::kable((analysis$sampleTable), position='center', table.attr="style='width
 sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
 ```
 
-```{r read_counts_tables, include=FALSE}
-analysis$samplefileIDs <- dir(file.path(analysis$config$rootDir, analysis$config$alignmentDir))
-analysis$samplefileIDs <- analysis$samplefileIDs[analysis$samplefileIDs %in% analysis$sampleTable$FileID]
-analysis$sampleSTARReads <- sapply(analysis$samplefileIDs, function(sid) {read_tsv(paste0(
-  dir(file.path(analysis$config$rootDir, analysis$config$alignmentDir), pattern = sid, full.names = TRUE),
-  "/",sid,
-  analysis$config$STARreadSuffix
-), col_names = c("gene_id","unstranded_count","sense_count","antisense_count"),
-  col_types = c(gene_id = col_character(),
-  unstranded_count = col_double(),
-  sense_count = col_double(),
-  antisense_count = col_double()))},
-simplify = FALSE,
-USE.NAMES = TRUE)
+```{r}
+if (!is.null(unlist(analysis$config$dropSamples))){
+  out <- paste0("Sample(s)\n",
+                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
+                "\nbeing removed from downstream analysis per user specification.") 
+  analysis$sampleTable <- analysis$sampleTable %>%
+    filter(!SampleID %in% analysis$config$dropSamples)
+  sample_order <- sample_order[
+    !(sample_order %in% as.factor(analysis$config$dropSamples))]
+  cat(out)
+} else {
+  analysis$ddsDrop <- analysis$dds
+}
+sample_order <- droplevels(sample_order)
 ```
 
-```{r dds, include=FALSE}
-analysis$mapBins <- do.call(cbind,
-                            sapply(analysis$sampleTable$FileID, 
-          function(sid){analysis$sampleSTARReads[[sid]][,paste0(analysis$config$libraryType,"_count")][c(1:4),]}))
+```{r read_counts_tables, include=FALSE}
+# analysis$samplefileIDs <- dir(file.path(
+#   analysis$config$rootDir, analysis$config$alignmentDir))
+# analysis$samplefileIDs <- analysis$samplefileIDs[
+#   analysis$samplefileIDs %in% analysis$sampleTable$FileID]
+
+analysis$samplefileIDs <- analysis$sampleTable$FileID
+
+analysis$sampleSTARReads <- sapply(analysis$samplefileIDs, function(sid) {
+  file <- dir(
+    file.path(analysis$config$rootDir, analysis$config$alignmentDir),
+    pattern = sid, full.names = TRUE)
+  read_tsv(paste0(file,"/",sid,analysis$config$STARreadSuffix),
+           col_names = c("gene_id","unstranded_count","sense_count","antisense_count"),
+           col_types = c(gene_id = col_character(),
+                         unstranded_count = col_double(),
+                         sense_count = col_double(),
+                         antisense_count = col_double())
+           )
+  },
+  simplify = FALSE,USE.NAMES = TRUE)
+```
+
+```{r create_dds, include=FALSE}
+analysis$mapBins <- do.call(
+  cbind,
+  sapply(analysis$sampleTable$FileID, 
+    function(sid){
+      analysis$sampleSTARReads[[sid]][
+        ,paste0(analysis$config$libraryType,"_count")][c(1:4),]
+    }))
 rownames(analysis$mapBins) <- analysis$sampleSTARReads[[1]][c(1:4),][["gene_id"]]
-colnames(analysis$mapBins) <- recode(as.character(unlist(strsplit(analysis$sampleTable$SampleID, paste0(".", analysis$config$libraryType, "_count")))), !!!setNames(analysis$sampleTable$SampleID, as.character(analysis$sampleTable$FileID)))
+colnames(analysis$mapBins) <-
+  recode(
+    as.character(
+      unlist(
+        strsplit(
+          analysis$sampleTable$SampleID,
+          paste0(".", analysis$config$libraryType, "_count")
+    ))),
+    !!!setNames(analysis$sampleTable$SampleID,
+                as.character(analysis$sampleTable$FileID)))
  
 raw_counts <- do.call(cbind,sapply(analysis$sampleTable$FileID, function(sid){analysis$sampleSTARReads[[sid]][,paste0( analysis$config$libraryType, "_count")][-c(1:4),]}))
 colnames(raw_counts) <- recode(as.character(unlist(strsplit(analysis$sampleTable$FileID, paste0(".", analysis$config$libraryType, "_count")))), !!!setNames(analysis$sampleTable$SampleID, as.character(analysis$sampleTable$FileID)))
@@ -129,10 +165,15 @@ mapping_plot(analysis$mapBins)
 
 ```{r remove_samples}
 if (!is.null(unlist(analysis$config$dropSamples))){
-  out <- paste0("Sample(s)\n", paste0(analysis$config$dropSamples, sep=", ", collapse = ''),"\nbeing removed from downstream analysis per user specification.") 
-  analysis$mapBins <- analysis$mapBins[,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
-  analysis$ddsDrop <- analysis$dds[,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
-  sample_order <- sample_order[!(sample_order %in% as.factor(analysis$config$dropSamples))]
+  out <- paste0("Sample(s)\n",
+                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
+                "\nbeing removed from downstream analysis per user specification.") 
+  analysis$mapBins <- analysis$mapBins[
+    ,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
+  analysis$ddsDrop <- analysis$dds[
+    ,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
+  sample_order <- sample_order[
+    !(sample_order %in% as.factor(analysis$config$dropSamples))]
   cat(out)
 } else {
   analysis$ddsDrop <- analysis$dds
@@ -141,7 +182,10 @@ sample_order <- droplevels(sample_order)
 ```
 
 ```{r gene_names, include=TRUE}
-geneInfoTab <- read_tsv(file.path(analysis$config$rootDir, analysis$config$referenceDir, "geneInfo.tab"), skip = 1, col_names = c("gene_id","gene_symbol","gene_type"))
+geneInfoTab <- read_tsv(file.path(analysis$config$rootDir,
+                                  analysis$config$referenceDir, "geneInfo.tab"),
+                        skip = 1,
+                        col_names = c("gene_id","gene_symbol","gene_type"))
 
 ## Remove samples if there are fewer total fragment counts than there are possible features
 ## Somewhat arbitrary lower bound and shouldn't be an issue, but could catch a technical error
@@ -177,7 +221,10 @@ rawMedianLogs <- rowMedians(rawLogCounts)
 rawLogRatios <- rawLogCounts - rawMedianLogs
 
 
-normLogCounts <- log(DESeq2::counts(analysis$ddsDrop, normalized = TRUE)[rowMins(DESeq2::counts(analysis$ddsDrop))>0,])
+normLogCounts <- log(
+  DESeq2::counts(analysis$ddsDrop, normalized = TRUE)[
+    rowMins(DESeq2::counts(analysis$ddsDrop))>0,]
+  )
 normMedianLogs <- rowMedians(normLogCounts)
 normLogRatios <- normLogCounts - normMedianLogs
 
@@ -201,24 +248,45 @@ print(analysis$pca)
 ```{r write_tables}
 dir.create("outputs")
 ## sample table
-write_csv(analysis$sampleTable, path = paste0("outputs/", analysis$config$analysis,".csv"), col_names = TRUE)
+write_csv(analysis$sampleTable, path = paste0("outputs/sample_table_",
+                                              analysis$config$analysis,".csv"),
+          col_names = TRUE)
 ## raw counts w/ gene symbols
-write_csv(as.data.frame(raw_counts)%>%rownames_to_column(var = "gene_id"),path = paste0("outputs/raw_count_",analysis$config$reference, "_", analysis$config$analysis,".csv"),col_names = TRUE)
+write_csv(as.data.frame(raw_counts) %>% 
+            rownames_to_column(var = "gene_id"),
+          path = paste0("outputs/raw_count_",
+                        analysis$config$reference, "_",
+                        analysis$config$analysis,".csv"),
+          col_names = TRUE)
 
 ## raw counts with ensembl IDs
-ensembleRawCount <- do.call(cbind,sapply(analysis$samplefileIDs,
-  function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
+ensembleRawCount <- 
+  do.call(cbind,sapply(
+    analysis$samplefileIDs,
+    function(sid){analysis$sampleSTARReads[[sid]][,"unstranded_count"][-c(1:4),]}))
 rownames(ensembleRawCount) <- analysis$sampleSTARReads[[1]][-c(1:4),][["gene_id"]]
-write_csv(as.data.frame(ensembleRawCount)%>%rownames_to_column(var = "EnsemblID"),
-          path = paste0("outputs/raw_count_EnsemblID_", analysis$config$reference, analysis$config$analysis, ".csv"),col_names = TRUE)
+write_csv(as.data.frame(ensembleRawCount) %>% 
+            rownames_to_column(var = "EnsemblID"),
+          path = paste0("outputs/raw_count_EnsemblID_", 
+                        analysis$config$reference, 
+                        analysis$config$analysis, ".csv"),
+          col_names = TRUE)
 ## rLog 
 analysis$rldDrop <- rlog(analysis$ddsDrop, blind = FALSE, fitType = "parametric")
 analysis$assayRlogForGSEA <- assay(analysis$rldDrop)
-analysis$assayRlogForGSEA <- analysis$assayRlogForGSEA[rowMeans(analysis$assayRlogForGSEA)>0,]
-write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"), Description = "na", analysis$assayRlogForGSEA), path = paste0("outputs/rlog_forGSEA_", analysis$config$analysis, ".txt"))
+analysis$assayRlogForGSEA <-
+  analysis$assayRlogForGSEA[rowMeans(analysis$assayRlogForGSEA)>0,]
+write_tsv(data.frame(Name = str_remove(rownames(analysis$assayRlogForGSEA), "[.].*"),
+                     Description = "na", analysis$assayRlogForGSEA),
+          path = paste0("outputs/rlog_forGSEA_", analysis$config$analysis, ".txt"))
 
 ## GSEA cls file
-analysis$clsLinesGroup <- c(paste0(c(length(analysis$rldDrop$Group),length(unique(analysis$rldDrop$Group)),1), collapse = " "), paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "), paste0(analysis$rldDrop$Group, collapse = " "))
+analysis$clsLinesGroup <-
+  c(paste0(c(length(analysis$rldDrop$Group),
+             length(unique(analysis$rldDrop$Group)),1),
+           collapse = " "),
+    paste0(c("#",unique(as.vector(analysis$rldDrop$Group))), collapse = " "),
+    paste0(analysis$rldDrop$Group, collapse = " "))
 write_lines(analysis$clsLinesGroup, path = paste0("outputs/Group_",analysis$config$analysis,".cls"))
 
 ```
