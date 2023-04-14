@@ -831,3 +831,4 @@ GSEA.ReadClsFile <-
     }
     return(list(phen = phen, class.v = class.v))
   }
+
