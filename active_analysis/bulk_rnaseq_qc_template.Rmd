@@ -1,0 +1,222 @@
+---
+title: "bulk_RNAseq_QC"
+author: "EPRC Gencore"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4, dev='png')
+library(tidyverse)
+library(ggforce)
+library(grid)
+library(ggpubr)
+library(yaml)
+library(DESeq2)
+library(EDASeq)
+library(DT)
+#library(shiny)
+#library(EnhancedVolcano)
+library(tools)
+#library(ComplexHeatmap)
+library(gridExtra)
+library(gtable)
+library(circlize)
+library(openxlsx)
+library(reshape2)
+library(kableExtra)
+library(rlang)
+#library(forcats)
+library(gtools)
+#library(RColorBrewer)
+#library(fgsea)
+library(MatrixGenerics)
+#library(plyr)
+
+remotes::install_github('yerkes-gencore/gencore-bulk',force = TRUE)
+
+
+library(gencoreBulk)
+
+counts <- DESeq2::counts
+#config <- yaml.load_file("config.yaml")
+#source("functions.R")
+```
+
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+## Study overview
+
+```{r reset_analysis_obj, eval=TRUE, include=FALSE}
+# This is moved out of the setup block to avoid accidentally overwriting your
+# analysis object when restarting a session
+analysis = list()
+```
+
+```{r load_config, include=FALSE}
+# Store config with results object for record keeping
+analysis$config <- yaml.load_file("config/config.yaml")
+```
+
+```{r sample_metadata_setup}
+## Build your own
+analysis$sampleTable <- data.frame(matrix("", 0, 3, dimnames=list(c(), c("FileID", "SampleID", "Group"))), stringsAsFactors=TRUE)
+
+## Or load from file 
+analysis$sampleTable <- read.table("config/exp_design_template.txt", header=T, stringsAsFactors = FALSE)
+#analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
+analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
+
+knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
+    kable_styling(full_width = TRUE)
+
+# Store the order you'd like samples to appear in figure
+# Order is determined by sampleGrouping parameters in config
+# But you could also manually specify it here if there aren't easy rules
+sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
+```
+
+```{r read_counts_tables, include=FALSE}
+
+analysis$samplefileIDs <- analysis$sampleTable$FileID
+
+readfiles <- sapply(
+      analysis$samplefileIDs,
+      function(sid) {
+       paste0(dir(paste0(analysis$config$rootDir,
+                         analysis$config$alignmentDir),
+                  pattern = sid, full.names = TRUE),
+              "/", sid, analysis$config$STARreadSuffix)})
+          
+outs <- parseReadPerGeneFiles(readfiles, 'unstranded')
+
+analysis$mapBins <- outs$map_bins
+raw_counts <- outs$read_counts
+
+# order counts as they are in the sampletable
+raw_counts <- raw_counts[,analysis$sampleTable$FileID]
+```
+
+```{r gene_names, include=TRUE}
+geneInfoTab <- read_tsv(file.path(analysis$config$rootDir,
+                                  analysis$config$referenceDir,
+                                  "geneInfo.tab"),
+                        skip = 1,
+                        col_names = c("gene_id","gene_symbol","gene_type"))
+
+## Remove samples if there are fewer total fragment counts than there are possible features
+## Somewhat arbitrary lower bound and shouldn't be an issue, but could catch a technical error
+## if data isn't loading correctly (but you should see this in the mapping plot)
+lowcounts <- colSums(raw_counts) < nrow(geneInfoTab)
+stopifnot(!sum(lowcounts)>0)
+# if (sum(lowcounts)>0){
+#   cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
+# }
+# analysis$dds <- analysis$dds[,!lowcounts]
+# sample_order <- sample_order[!lowcounts]
+# sample_order <- droplevels(sample_order)
+
+gene_names <- plyr::mapvalues(rownames(raw_counts), 
+                        from=geneInfoTab$gene_id,
+                        to=geneInfoTab$gene_symbol)
+
+rownames(raw_counts) <- make.names(gene_names, unique=TRUE)
+```
+
+```{r create_dds, include=FALSE}
+
+
+## safety check to make sure metadata and samples are properly associated
+stopifnot(colnames(raw_counts) == analysis$sampleTable$FileID)
+
+analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
+  analysis$sampleTable,
+  design = as.formula( ~ 1)
+)
+```
+
+## QC
+
+### Mapping
+
+Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
+
+```{r mapping_plot, fig.width=8, fig.height=6}
+analysis$mapping_bins_plot <- mappingBinsPlot(analysis$mapBins)
+analysis$mapping_bins_plot
+```
+
+```{r remove_samples}
+## Removing samples specified in the config. 
+## This occurs after the mapBin plot just to have record of the 
+## removed sample and possibly why it was removed, 
+## but it could be adjusted to be upstream.
+
+if (!is.null(unlist(analysis$config$dropSamples))){
+  out <- paste0("Sample(s)\n",
+                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
+                "\nbeing removed from downstream analysis per user specification.") 
+  analysis$mapBins <- analysis$mapBins[
+    ,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
+  analysis$dds <- analysis$dds[
+    ,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
+  sample_order <- sample_order[
+    !(sample_order %in% as.factor(analysis$config$dropSamples))]
+  cat(out)
+} else {
+  analysis$dds <- analysis$dds
+  ##analysis$ddsDrop <- analysis$dds
+}
+sample_order <- droplevels(sample_order)
+```
+
+
+
+```{r vst_and_ddsDrop}
+analysis$vst <- varianceStabilizingTransformation(analysis$dds,
+                                                         blind = FALSE,
+                                                         fitType = "parametric")
+analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
+
+analysis$rld <- rlog(analysis$dds, blind = FALSE, fitType = "parametric")
+```
+
+### Relative Log Expression (RLE) normalization
+
+Library size normalization of read counts with hypothesis that most genes are not differentially expressed
+
+
+
+```{r rle, fig.width = 6, fig.height=5}
+checkRLE(raw_counts, analysis)
+```
+
+
+### PCA
+
+Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable features. This will give us an estimate of similarity between samples, but will not account for all genes.
+
+```{r pca, fig.width=12, fig.height=8}
+analysis$pca <- plotPCAFromConfig(analysis)
+print(analysis$pca)
+```
+
+```{r}
+writeCountTables(raw_counts, analysis, generate_GSEA_app_tables = TRUE)
+```
+
+
+```{r}
+if (!dir.exists('saved_rds_objects')) { dir.create ('saved_rds_objects')}
+saveRDS(analysis, 'saved_rds_objects/analysis_post_QC.Rds')
+```
+
