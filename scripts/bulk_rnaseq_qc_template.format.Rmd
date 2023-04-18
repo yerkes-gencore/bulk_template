@@ -1,0 +1,63 @@
+---
+params:
+  title: "bulk RNAseq QC"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+title: "`r params$title`"
+author: "EPRC Gencore"
+date:  "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4, dev='png')
+```
+
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+## Study overview
+
+```{r}
+sample_metadata_table
+```
+
+## QC
+
+### Mapping
+
+Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
+
+```{r mapping_plot, fig.width=8, fig.height=6}
+analysis$mapping_bins_plot
+```
+
+### Relative Log Expression (RLE) normalization
+
+Library size normalization of read counts with hypothesis that most genes are not differentially expressed
+
+```{r rle, fig.width = 6, fig.height=5}
+analysis$RLE_raw 
+analysis$RLE_norm 
+```
+
+### PCA
+
+Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable features. This will give us an estimate of similarity between samples, but will not account for all genes.
+
+```{r pca, fig.width=12, fig.height=8}
+print(analysis$pca)
+
+## Plotly can work, but can give some weird legends as multiple legends aren't
+## supported. If you have only one factor in the legend you should be okay,
+## and the plotly implementation will allow hover info
+#ggplotly(analysis$pca, hover = 'text')
+```
+
+
