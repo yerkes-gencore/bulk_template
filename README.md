@@ -1,3 +1,9 @@
+**For now, only the QC template is ready**
+
+*The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo.*
+
+**Experimental Design Table**
+
 Set up the sample metadata table in R for record of the transformation
 Table should be called exp.design and have several columns specified
 
