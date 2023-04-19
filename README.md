@@ -1,23 +1,20 @@
-**For now, only the QC template is ready**
+# For now, only the QC template is ready #
 
-*The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo.*
+*The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo. See the link for install instructions*
 
-**Experimental Design Table**
+# Using the template #
 
-Set up the sample metadata table in R for record of the transformation
-Table should be called exp.design and have several columns specified
+Assuming the config is set up correctly (see next section), you can execute the script by executing the `bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
 
-**FileID** should have the sample-specific prefix to the STAR counts file. The redundant part of the file name (e.g. " _ReadsPerGene.out.tab") can be specified in the config as STARreadSuffix
+ ### Experimental Design Table ###
+ 
+The template relies on metadata provided in a table format. The table should include the following fields:
 
-**SampleID** should be a unique identifier for each sample, Ideally short and easy to read as it is used for figure labels
+* **FileID:** sample-specific prefix to the STAR counts file. The redundant part of the file name (e.g. " _ReadsPerGene.out.tab") can be specified in the config as STARreadSuffix
 
-**Group** should have the primary experimental condition(s) to be considered. May not apply in more complex studies
+* **SampleID** unique identifier for each sample, ideally short and easy to read as it is used for figure labels
 
-**Label** A short name for samples to be used in figures as labels for samples. E.g. S1 may not be informative enough for your intentions, but Day1_Sample1 might be better.
-
-**Intgroup** A grouping of samples that will be evaluated together. In a more complex study with interaction terms, this might represent the interaction terms of interest. E.g., a time series study with 2 treatments might have values such as `D1_control` in this field. In a simpler study, this may be redundant with the `Group` term, but the template will still look for `Intgroup` when using the sample filter function, baseline normalization for heatmaps, etc. 
-
-Additional metadata can be included in additional columns. Those columns can be named anything and can be referenced for figure mapping, etc. in the config
+Other fields can be supplied as relevant. You can refer to these columns by their name in the `QC_config.yml` to add layers to plots.
 
 An example design table
 
@@ -27,9 +24,10 @@ An example design table
 |p22074-s008_LiproxposFAC2_S148 |	p22074-s008	| LiproxposFAC	| LiproxposFAC	| LiproxposFAC_S148 |
 |p22074-s012_MTposFAC3_S152     |	p22074-s012	| MTposFAC      |	MTposFAC |	MTposFAC_S152 |
 | … | … | … | … | … |
-| #Required, unique and specific based on file names | #Required, unique, anything	| #Required, non unique	| #Required, non unique	| #Required, anything |
-				
-				
+| #Required, unique and specific based on file names | #Required, unique, anything	| Not required	| Not required	| Not required |
 
-Some data may need to be specifically cast to ensure proper ggplot mapping. E.g. values in Batch may be categorical and should be factors, while continuous values (e.g. "Dosage") may want to be cast as numeric. 
+### Config ###
+
+A yaml-style config specifies variables to be used in the script. Here you can change directories, references (used to rename genes from IDs to symbols), PCA mapping aesthetics, etc. 
+
 
