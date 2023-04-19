@@ -125,6 +125,7 @@ gene_names <- plyr::mapvalues(rownames(raw_counts),
                         from=geneInfoTab$gene_id,
                         to=geneInfoTab$gene_symbol)
 
+raw_counts_ensembl <- raw_counts
 rownames(raw_counts) <- make.names(gene_names, unique=TRUE)
 ```
 
@@ -209,14 +210,15 @@ print(analysis$pca)
 ```
 
 ```{r}
-writeCountTables(raw_counts,
+## pass in either raw_counts or raw_counts_ensembl, based on how you want things labeled
+writeCountTables(raw_counts_ensembl,
                  analysis,
                  generate_GSEA_app_tables = FALSE,
                  write_sample_table = TRUE)
 ```
 
 ```{r}
-if (!dir.exists('../saved_rds_objects')) { dir.create ('../saved_rds_objects')}
+if (!dir.exists('../saved_rds_objects')){dir.create ('../saved_rds_objects')}
 saveRDS(analysis, '../saved_rds_objects/analysis_post_QC.Rds')
 ```
 
