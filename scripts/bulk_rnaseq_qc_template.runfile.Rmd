@@ -17,7 +17,7 @@ library(ggpubr)
 library(yaml)
 library(DESeq2)
 library(EDASeq)
-library(DT)
+library(DT)           ## Interactive tables, not used for QC?
 #library(shiny)
 #library(EnhancedVolcano)
 library(tools)
@@ -27,15 +27,16 @@ library(gtable)
 library(circlize)
 library(openxlsx)
 library(reshape2)
-library(kableExtra)
+library(kableExtra)   ## Formatting tables, not sure if still used
 library(rlang)
 #library(forcats)
 library(gtools)
 #library(RColorBrewer)
 #library(fgsea)
 library(MatrixGenerics)
-library(here)
-library(plotly)
+library(here)         ## For consistent directory structures
+##library(plotly)     ## If you want interactive PCA
+library(ggrepel)      ## for PCA plot repel text
 #library(plyr)
 
 ##remotes::install_github('yerkes-gencore/gencore-bulk',force = TRUE)
