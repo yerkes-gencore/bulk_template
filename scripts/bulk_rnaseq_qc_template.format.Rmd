@@ -34,7 +34,7 @@ sample_metadata_table
 
 Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
 
-```{r mapping_plot, fig.width=8, fig.height=6}
+```{r mapping_plot, fig.width=12, fig.height=8}
 analysis$mapping_bins_plot
 ```
 
@@ -42,7 +42,7 @@ analysis$mapping_bins_plot
 
 Library size normalization of read counts with hypothesis that most genes are not differentially expressed
 
-```{r rle, fig.width = 6, fig.height=5}
+```{r rle, fig.width = 12, fig.height=8}
 analysis$RLE_raw 
 analysis$RLE_norm 
 ```
