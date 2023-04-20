@@ -1,0 +1,28 @@
+# Analysis title
+analysis: p22074_Peijian_Analysis
+# short name to identify reference genome version, used to label output counts tables
+reference: GRCm38
+# root dir is base of mounted file system, might change by machine. Include the 
+# path upto the 'runs/' folder. All subsequent paths should be relative to this root
+rootDir: /Volumes/yerkes/genomelab/illumina/runs/ #/yerkes-cifs/runs/
+# Reference genome directory that holds "geneInfo.tab" 
+referenceDir: Genome_references/mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a 
+# STAR feature counts files directory
+alignmentDir: Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
+# Suffix used to identify read count tables output by STAR
+STARreadSuffix: _ReadsPerGene.out.tab
+## column of the STAR output file to draw from
+libraryType: unstranded
+
+# Samples to drop, using the same names as the "sample ID" column of the exp_design_template
+dropSamples:
+-
+
+# Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
+pcaMapping: 
+  color: 
+  shape: 
+  label: 
+  path:
+  ellipse:
+
