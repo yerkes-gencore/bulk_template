@@ -18,15 +18,13 @@ library(yaml)
 library(DESeq2)
 library(EDASeq)
 library(DT)           ## Interactive tables, not used for QC?
-
 library(tools)
-
 library(gridExtra)
 library(gtable)
 #library(circlize)
 library(openxlsx)      ## Writing count table outputs
 library(reshape2)
-#library(kableExtra)   ## Formatting tables, not used
+library(kableExtra)   ## Formatting tables, not used
 library(rlang)
 #library(forcats)
 library(gtools)
@@ -34,13 +32,16 @@ library(MatrixGenerics)
 library(here)         ## For consistent directory structures
 ##library(plotly)     ## If you want interactive PCA
 library(ggrepel)      ## for PCA plot repel text
-
+library(plyr)
+library(here)
 ##remotes::install_github('yerkes-gencore/gencore-bulk',force = TRUE)
-
 
 library(gencoreBulk)
 
+
+## sometimes they conflict with other loaded packages
 counts <- DESeq2::counts
+here <- here::here
 ```
 
 ## Study overview
@@ -67,21 +68,17 @@ analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
 sample_metadata_table <- knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
     kable_styling(full_width = TRUE)
-
-sample_metadata_table
-
 # Store the order you'd like samples to appear in figure
 # Order is determined by sampleGrouping parameters in config
 # But you could also manually specify it here if there aren't easy rules
 sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
+
+sample_metadata_table
 ```
 
 ```{r read_counts_tables, include=FALSE}
-
-analysis$samplefileIDs <- analysis$sampleTable$FileID
-
 readfiles <- sapply(
-      analysis$samplefileIDs,
+      analysis$sampleTable$FileID,
       function(sid) {
        paste0(dir(paste0(analysis$config$rootDir,
                          analysis$config$alignmentDir),
@@ -90,7 +87,7 @@ readfiles <- sapply(
           
 outs <- parseReadPerGeneFiles(readfiles, 'unstranded')
 
-analysis$mapBins <- outs$map_bins
+mapBins <- outs$map_bins
 raw_counts <- outs$read_counts
 
 # order counts as they are in the sampletable
@@ -105,46 +102,35 @@ geneInfoTab <- read_tsv(file.path(analysis$config$rootDir,
                         col_names = c("gene_id","gene_symbol","gene_type"))
 
 ## Remove samples if there are fewer total fragment counts than there are possible features
-## Somewhat arbitrary lower bound and shouldn't be an issue, but could catch a technical error
-## if data isn't loading correctly (but you should see this in the mapping plot)
+## could catch a technical error if data isn't loading correctly (but you should see this in the mapping plot)
 lowcounts <- colSums(raw_counts) < nrow(geneInfoTab)
 stopifnot(!sum(lowcounts)>0)
-# if (sum(lowcounts)>0){
-#   cat("Removing sample(s): ", names(lowcounts)[lowcounts], "due to low counts", sep="\n")
-# }
-# analysis$dds <- analysis$dds[,!lowcounts]
-# sample_order <- sample_order[!lowcounts]
-# sample_order <- droplevels(sample_order)
 
 gene_names <- plyr::mapvalues(rownames(raw_counts), 
                         from=geneInfoTab$gene_id,
                         to=geneInfoTab$gene_symbol)
 
+## save this in case you want to write it out
 raw_counts_ensembl <- raw_counts
 rownames(raw_counts) <- make.names(gene_names, unique=TRUE)
 ```
 
 ```{r create_dds, include=FALSE}
-
-
 ## safety check to make sure metadata and samples are properly associated
 stopifnot(colnames(raw_counts) == analysis$sampleTable$FileID)
 
 analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
-  analysis$sampleTable,
-  design = as.formula( ~ 1)
-)
+                                       analysis$sampleTable,
+                                       design = as.formula( ~ 1))
 ```
 
 ## QC
 
 ### Mapping
 
-
-
 ```{r mapping_plot, fig.width=8, fig.height=6}
-analysis$mapping_bins_plot <- mappingBinsPlot(analysis$mapBins)
-analysis$mapping_bins_plot
+analysis$plots$mapping_bins_plot <- mappingBinsPlot(mapBins)
+analysis$plots$mapping_bins_plot
 ```
 
 ```{r remove_samples}
@@ -154,19 +140,18 @@ analysis$mapping_bins_plot
 ## but it could be adjusted to be upstream.
 
 if (!is.null(unlist(analysis$config$dropSamples))){
-  out <- paste0("Sample(s)\n",
-                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
-                "\nbeing removed from downstream analysis per user specification.") 
-  analysis$mapBins <- analysis$mapBins[
-    ,!colnames(analysis$mapBins) %in% analysis$config$dropSamples]
+  mapBins <- mapBins[
+    ,!colnames(mapBins) %in% analysis$config$dropSamples]
   analysis$dds <- analysis$dds[
     ,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
   sample_order <- sample_order[
     !(sample_order %in% as.factor(analysis$config$dropSamples))]
-  cat(out)
+  out <- paste0("Sample(s)\n",
+                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
+                "\nbeing removed from downstream analysis per user specification.") 
+    cat(out)
 } else {
   analysis$dds <- analysis$dds
-  ##analysis$ddsDrop <- analysis$dds
 }
 sample_order <- droplevels(sample_order)
 ```
@@ -174,40 +159,35 @@ sample_order <- droplevels(sample_order)
 
 
 ```{r vst_and_ddsDrop}
-analysis$vst <- varianceStabilizingTransformation(analysis$dds,
+analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
+assays(analysis$dds)$vst <- varianceStabilizingTransformation(analysis$dds,
                                                          blind = FALSE,
                                                          fitType = "parametric")
-analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
 
-analysis$rld <- rlog(analysis$dds, blind = FALSE, fitType = "parametric")
+assays(analysis$dds)$rld <- rlog(analysis$dds, blind = FALSE, fitType = "parametric")
 ```
 
 ### Relative Log Expression (RLE) normalization
 
 Library size normalization of read counts with hypothesis that most genes are not differentially expressed
 
-
-
 ```{r rle, fig.width = 6, fig.height=5}
-rle_plots <- checkRLE(raw_counts, analysis)
-analysis$RLE_raw <- rle_plots$RLE_raw
-analysis$RLE_norm <- rle_plots$RLE_norm
+rle_plots <- checkRLE(analysis)
+analysis$plots$RLE_raw <- rle_plots$RLE_raw
+analysis$plots$RLE_norm <- rle_plots$RLE_norm
 ```
-
 
 ### PCA
 
 Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable features. This will give us an estimate of similarity between samples, but will not account for all genes.
 
-```{r pca, fig.width=12, fig.height=8}
-analysis$pca <- plotPCAFromConfig(analysis)
-print(analysis$pca)
+```{r pca, fig.width=12, fig.height=8, warning=FALSE}
+analysis$plots$pca <- plotPCAFromConfig(analysis)
+print(analysis$plots$pca)
 ```
 
 ```{r}
-## pass in either raw_counts or raw_counts_ensembl, based on how you want things labeled
-writeCountTables(raw_counts_ensembl,
-                 analysis,
+writeCountTables(analysis,
                  generate_GSEA_app_tables = FALSE,
                  write_sample_table = TRUE)
 ```
@@ -218,11 +198,11 @@ saveRDS(analysis, '../saved_rds_objects/analysis_post_QC.Rds')
 ```
 
 ```{r}
-rmarkdown::render(here('scripts/bulk_rnaseq_qc_template.format.Rmd'),
+rmarkdown::render(here::here('scripts/bulk_rnaseq_qc_template.format.Rmd'),
                   output_file = 'QC_report.html',
-                  output_dir = here('reports'),
+                  output_dir = here::here('reports'),
                   params = list(
-                    title = 'Bulk RNA QC Report'
-                  ))
+                    title = 'Bulk RNA QC Report')
+                  )
 ```
 
