@@ -77,13 +77,14 @@ sample_metadata_table
 ```
 
 ```{r read_counts_tables, include=FALSE}
+STARreadSuffix <- "_ReadsPerGene.out.tab"
 readfiles <- sapply(
       analysis$sampleTable$FileID,
       function(sid) {
        paste0(dir(paste0(analysis$config$rootDir,
                          analysis$config$alignmentDir),
                   pattern = sid, full.names = TRUE),
-              "/", sid, analysis$config$STARreadSuffix)})
+              "/", sid, STARreadSuffix)})
           
 outs <- parseReadPerGeneFiles(readfiles, 'unstranded')
 
