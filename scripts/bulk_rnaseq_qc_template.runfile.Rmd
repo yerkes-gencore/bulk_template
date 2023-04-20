@@ -11,33 +11,29 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4, dev='png')
 library(tidyverse)
-library(ggforce)
+#library(ggforce)
 library(grid)
-library(ggpubr)
+#library(ggpubr)
 library(yaml)
 library(DESeq2)
 library(EDASeq)
 library(DT)           ## Interactive tables, not used for QC?
-#library(shiny)
-#library(EnhancedVolcano)
+
 library(tools)
-#library(ComplexHeatmap)
+
 library(gridExtra)
 library(gtable)
-library(circlize)
-library(openxlsx)
+#library(circlize)
+library(openxlsx)      ## Writing count table outputs
 library(reshape2)
-library(kableExtra)   ## Formatting tables, not sure if still used
+#library(kableExtra)   ## Formatting tables, not used
 library(rlang)
 #library(forcats)
 library(gtools)
-#library(RColorBrewer)
-#library(fgsea)
 library(MatrixGenerics)
 library(here)         ## For consistent directory structures
 ##library(plotly)     ## If you want interactive PCA
 library(ggrepel)      ## for PCA plot repel text
-#library(plyr)
 
 ##remotes::install_github('yerkes-gencore/gencore-bulk',force = TRUE)
 
@@ -45,8 +41,6 @@ library(ggrepel)      ## for PCA plot repel text
 library(gencoreBulk)
 
 counts <- DESeq2::counts
-#config <- yaml.load_file("config.yaml")
-#source("functions.R")
 ```
 
 ## Study overview
@@ -59,7 +53,7 @@ analysis = list()
 
 ```{r load_config, include=FALSE}
 # Store config with results object for record keeping
-analysis$config <- yaml.load_file("../config/config.yaml")
+analysis$config <- yaml.load_file("../config/QC_config.yml")
 ```
 
 ```{r sample_metadata_setup}
