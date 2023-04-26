@@ -94,8 +94,7 @@ STARreadSuffix <- "_ReadsPerGene.out.tab"
 readfiles <- sapply(
       analysis$sampleTable$FileID,
       function(sid) {
-       paste0(dir(paste0(analysis$config$rootDir,
-                         analysis$config$alignmentDir),
+       paste0(dir(analysis$config$alignmentDir,
                   pattern = sid, full.names = TRUE),
               "/", sid, STARreadSuffix)})
           
