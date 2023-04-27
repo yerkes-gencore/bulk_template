@@ -16,24 +16,11 @@ knitr::opts_chunk$set(warning = FALSE,
                       fig.height = 4,
                       dev='png')
 library(tidyverse)    ## General logic and processing
-#library(ggforce)
-#library(grid)
-#library(ggpubr)
 library(yaml)         ## Parse config
 library(DESeq2)       ## Makes us have a job
-#library(EDASeq)
-#library(DT)           ## Interactive tables, not used for QC?
 library(tools)
-#library(gridExtra)
-#library(gtable)
 #library(circlize)    ## For colorRamp2 in heatmaps
 library(openxlsx)     ## Writing count table outputs
-#library(reshape2)
-#library(kableExtra)   ## Formatting tables
-#library(rlang)
-#library(forcats)
-#library(gtools)
-#library(MatrixGenerics)
 library(here)         ## For consistent directory structures
 ##library(plotly)     ## If you want interactive PCA
 library(ggrepel)      ## for PCA plot repel text
@@ -214,8 +201,8 @@ writeCountTables(analysis,
 ```
 
 ```{r}
-if (!dir.exists('../saved_rds_objects')){dir.create ('../saved_rds_objects')}
-saveRDS(analysis, '../saved_rds_objects/analysis_post_QC.Rds')
+if (!dir.exists(here('saved_rds_objects'))){dir.create(here('saved_rds_objects'))}
+saveRDS(analysis, here('saved_rds_objects/analysis_post_QC.Rds'))
 ```
 
 ```{r}
