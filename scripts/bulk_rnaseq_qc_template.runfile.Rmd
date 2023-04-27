@@ -17,23 +17,23 @@ knitr::opts_chunk$set(warning = FALSE,
                       dev='png')
 library(tidyverse)    ## General logic and processing
 #library(ggforce)
-library(grid)
+#library(grid)
 #library(ggpubr)
 library(yaml)         ## Parse config
 library(DESeq2)       ## Makes us have a job
-library(EDASeq)
-library(DT)           ## Interactive tables, not used for QC?
+#library(EDASeq)
+#library(DT)           ## Interactive tables, not used for QC?
 library(tools)
-library(gridExtra)
-library(gtable)
+#library(gridExtra)
+#library(gtable)
 #library(circlize)    ## For colorRamp2 in heatmaps
 library(openxlsx)     ## Writing count table outputs
-library(reshape2)
-library(kableExtra)   ## Formatting tables
-library(rlang)
+#library(reshape2)
+#library(kableExtra)   ## Formatting tables
+#library(rlang)
 #library(forcats)
-library(gtools)
-library(MatrixGenerics)
+#library(gtools)
+#library(MatrixGenerics)
 library(here)         ## For consistent directory structures
 ##library(plotly)     ## If you want interactive PCA
 library(ggrepel)      ## for PCA plot repel text
@@ -79,8 +79,8 @@ analysis$sampleTable <- read.table("../config/exp_design_template.txt",
 #analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
 analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
-sample_metadata_table <- knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
-    kable_styling(full_width = TRUE)
+sample_metadata_table <- knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html')# %>%
+    #kable_styling(full_width = TRUE)
 # Store the order you'd like samples to appear in figure
 # Order is determined by sampleGrouping parameters in config
 # But you could also manually specify it here if there aren't easy rules
