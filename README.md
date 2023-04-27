@@ -1,8 +1,6 @@
-# For now, only the QC template is ready #
+# Using the template #
 
 *The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo. See the link for install instructions*
-
-# Using the template #
 
 Assuming the config is set up correctly (see next section), you can execute the script by executing the `scripts/bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
 
