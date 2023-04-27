@@ -1,8 +1,10 @@
 # Using the template #
 
+Click the green button in the upper-right corner to make a new repo using this as the template, or use GitHub CLI to make a new repo from this template.
+
 *The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo. See the link for install instructions*
 
-Assuming the config is set up correctly (see next section), you can execute the script by executing the `scripts/bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
+Assuming the config is set up correctly (see next section), you can execute the script by running the `scripts/bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
 
  ### Experimental Design Table ###
  
