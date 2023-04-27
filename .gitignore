@@ -44,3 +44,8 @@ outputs/*
 saved_rds_objects/*
 plots/*
 reports/*
+
+# old functions
+R/functions.R
+R/GKTDESeq2Extensions.R
+R/WIP.R
