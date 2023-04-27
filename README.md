@@ -4,7 +4,7 @@
 
 # Using the template #
 
-Assuming the config is set up correctly (see next section), you can execute the script by executing the `bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
+Assuming the config is set up correctly (see next section), you can execute the script by executing the `scripts/bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
 
  ### Experimental Design Table ###
  
@@ -28,6 +28,6 @@ An example design table
 
 ### Config ###
 
-A yaml-style config specifies variables to be used in the script. Here you can change directories, references (used to rename genes from IDs to symbols), PCA mapping aesthetics, etc. 
+A yaml-style config specifies variables to be used in the script. Here you specify the STAR output directory, STAR reference directory (used to rename genes from IDs to symbols), PCA mapping aesthetics, etc. 
 
 
