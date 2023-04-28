@@ -46,7 +46,7 @@ analysis = list()
 
 ```{r load_config, include=FALSE}
 # Store config with results object for record keeping
-analysis$qc_config <- yaml.load_file("../config/QC_config.yml")
+analysis$qc_config <- yaml.load_file(here("config/QC_config.yml"))
 ```
 
 ```{r sample_metadata_setup}
