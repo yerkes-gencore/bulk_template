@@ -58,7 +58,7 @@ analysis$sampleTable <- data.frame(matrix("", 0, 3,
                                    stringsAsFactors=TRUE)
 
 ## Or load from file 
-analysis$sampleTable <- read.table("../config/exp_design_template.txt",
+analysis$sampleTable <- read.table(here("config/exp_design_template.txt"),
                                    header=T, 
                                    stringsAsFactors = FALSE)
 
@@ -95,8 +95,7 @@ raw_counts <- raw_counts[,analysis$sampleTable$FileID]
 ```
 
 ```{r gene_names, include=TRUE}
-geneInfoTab <- read_tsv(file.path(analysis$qc_config$rootDir,
-                                  analysis$qc_config$referenceDir,
+geneInfoTab <- read_tsv(file.path(analysis$qc_config$referenceDir,
                                   "geneInfo.tab"),
                         skip = 1,
                         col_names = c("gene_id","gene_symbol","gene_type"))
