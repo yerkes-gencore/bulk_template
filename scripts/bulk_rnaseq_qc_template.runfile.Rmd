@@ -46,7 +46,7 @@ analysis = list()
 
 ```{r load_config, include=FALSE}
 # Store config with results object for record keeping
-analysis$config <- yaml.load_file("../config/QC_config.yml")
+analysis$qc_config <- yaml.load_file("../config/QC_config.yml")
 ```
 
 ```{r sample_metadata_setup}
@@ -63,7 +63,7 @@ analysis$sampleTable <- read.table("../config/exp_design_template.txt",
                                    stringsAsFactors = FALSE)
 
 ## Possible types of processing to arrange or factorize terms
-#analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$config$sampleGrouping)))
+#analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$qc_config$sampleGrouping)))
 analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
 
 sample_metadata_table <- knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html')# %>%
@@ -81,7 +81,7 @@ STARreadSuffix <- "_ReadsPerGene.out.tab"
 readfiles <- sapply(
       analysis$sampleTable$FileID,
       function(sid) {
-       paste0(dir(analysis$config$alignmentDir,
+       paste0(dir(analysis$qc_config$alignmentDir,
                   pattern = sid, full.names = TRUE),
               "/", sid, STARreadSuffix)})
           
@@ -95,8 +95,8 @@ raw_counts <- raw_counts[,analysis$sampleTable$FileID]
 ```
 
 ```{r gene_names, include=TRUE}
-geneInfoTab <- read_tsv(file.path(analysis$config$rootDir,
-                                  analysis$config$referenceDir,
+geneInfoTab <- read_tsv(file.path(analysis$qc_config$rootDir,
+                                  analysis$qc_config$referenceDir,
                                   "geneInfo.tab"),
                         skip = 1,
                         col_names = c("gene_id","gene_symbol","gene_type"))
@@ -140,15 +140,15 @@ analysis$plots$mapping_bins_plot
 ## removed sample and possibly why it was removed, 
 ## but it could be adjusted to be upstream.
 
-if (!is.null(unlist(analysis$config$dropSamples))){
+if (!is.null(unlist(analysis$qc_config$dropSamples))){
   mapBins <- mapBins[
-    ,!colnames(mapBins) %in% analysis$config$dropSamples]
+    ,!colnames(mapBins) %in% analysis$qc_config$dropSamples]
   analysis$dds <- analysis$dds[
-    ,!(colnames(analysis$dds) %in% analysis$config$dropSamples)]
+    ,!(colnames(analysis$dds) %in% analysis$qc_config$dropSamples)]
   sample_order <- sample_order[
-    !(sample_order %in% as.factor(analysis$config$dropSamples))]
+    !(sample_order %in% as.factor(analysis$qc_config$dropSamples))]
   out <- paste0("Sample(s)\n",
-                paste0(analysis$config$dropSamples, sep=", ", collapse = ''),
+                paste0(analysis$qc_config$dropSamples, sep=", ", collapse = ''),
                 "\nbeing removed from downstream analysis per user specification.") 
     cat(out)
 } else {
