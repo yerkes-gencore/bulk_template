@@ -60,18 +60,22 @@ analysis$sampleTable <- data.frame(matrix("", 0, 3,
 ## Or load from file 
 analysis$sampleTable <- read.table(here("config/exp_design_template.txt"),
                                    header=T, 
-                                   stringsAsFactors = FALSE)
+                                   stringsAsFactors = TRUE)
 
 ## Possible types of processing to arrange or factorize terms
 #analysis$sampleTable <- analysis$sampleTable %>% dplyr::arrange(across(all_of(analysis$qc_config$sampleGrouping)))
-analysis$sampleTable <- as.data.frame(sapply(analysis$sampleTable, as.factor))
+# analysis$sampleTable <- analysis$sampleTable %>%
+#   mutate(across(.), as.factor)
 
 sample_metadata_table <- knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html')# %>%
     #kable_styling(full_width = TRUE)
 # Store the order you'd like samples to appear in figure
 # Order is determined by sampleGrouping parameters in config
 # But you could also manually specify it here if there aren't easy rules
-sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
+# sample_order <- fct_inorder(as.character(analysis$sampleTable$SampleID))
+
+## for compatibility with filepaths
+analysis$sampleTable$FileID <- as.character(analysis$sampleTable$FileID)
 
 sample_metadata_table
 ```
@@ -144,8 +148,8 @@ if (!is.null(unlist(analysis$qc_config$dropSamples))){
     ,!colnames(mapBins) %in% analysis$qc_config$dropSamples]
   analysis$dds <- analysis$dds[
     ,!(colnames(analysis$dds) %in% analysis$qc_config$dropSamples)]
-  sample_order <- sample_order[
-    !(sample_order %in% as.factor(analysis$qc_config$dropSamples))]
+  # sample_order <- sample_order[
+  #   !(sample_order %in% as.factor(analysis$qc_config$dropSamples))]
   out <- paste0("Sample(s)\n",
                 paste0(analysis$qc_config$dropSamples, sep=", ", collapse = ''),
                 "\nbeing removed from downstream analysis per user specification.") 
@@ -155,7 +159,7 @@ if (!is.null(unlist(analysis$qc_config$dropSamples))){
 }
 
 ## I don't think this gets used anymore, but could be a good way to order figs
-sample_order <- droplevels(sample_order)
+# sample_order <- droplevels(sample_order)
 ```
 
 
