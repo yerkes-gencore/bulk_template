@@ -1,0 +1,298 @@
+---
+title: "bulk_RNAseq_Analysis"
+author: "DTG"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+
+library(ggforce)
+library(grid)
+library(ggpubr)
+library(EDASeq)
+#library(shiny)
+library(EnhancedVolcano)
+library(tools)
+library(ComplexHeatmap)
+library(gridExtra)
+library(gtable)
+library(reshape2)
+#library(rlang)
+library(forcats)
+library(gtools)
+library(RColorBrewer)
+library(fgsea)
+library(MatrixGenerics)
+library(tidyverse)    ## General logic and processing
+library(yaml)         ## Parse config
+library(DESeq2)       ## Makes us have a job
+library(DT)           ## Interactive tables
+#library(circlize)     ## For colorRamp2 in heatmaps
+library(openxlsx)     ## Writing count table outputs
+#library(reshape2)
+library(kableExtra)   ## Formatting tables
+library(here)         ## For consistent directory structures
+##library(plotly)     ## If you want interactive PCA
+#library(ggrepel)      ## for PCA plot repel text
+library(plyr)
+library(msigdbr)      ## Loads pathway genesets from MsigDB
+
+#remotes::install_github('yerkes-gencore/gencoreBulk')
+library(gencoreBulk)  ## See the git repo for instructions on using this
+
+
+## sometimes they conflict with other loaded packages
+counts <- DESeq2::counts
+here <- here::here
+```
+
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r}
+analysis <- readRDS(here('saved_rds_objects/analysis_post_QC.Rds'))
+analysis$analysis_config <- yaml.load_file(here("config/analysis_config.yml"))
+#analysis$sampleTable <- data.frame(lapply(analysis$sampleTable, as.factor))
+```
+
+
+## DGE {.tabset}
+
+```{r}
+## one last safety check to make sure metadata and samples are properly associated
+stopifnot(colnames(analysis$ddsDrop) == analysis$sampleTable$SampleID)
+
+design(analysis$dds) <- as.formula(paste0("~ ",
+                                          analysis$analysis_config$design))
+analysis$dds <- DESeq(analysis$dds)
+```
+
+```{r extract_results}
+## Make a list of  comparisons as you would pass them to a 
+## DESeq2::results() contrast 
+## if you want a single existing contrast, pass it in as a string
+## if you want to make a new contrast between factors, make it a list 
+## or character vector, depending on your needs
+## see ?results for more help
+
+## see your possible terms
+# resultsNames(analysis$dds)
+
+my_comparisons <- list('Group_FAC_vs_Cont',
+                       'Group_LiproxposFAC_vs_Cont',
+                       'Group_MTposFAC_vs_Cont')
+
+## groups to include for greg's filter function, specific to each comparison
+## should be levels of some group in colData(analysis$dds)
+filter_on_list <- list(c('FAC', 'Cont'),
+                       c('LiproxposFAC', 'Cont'),
+                       c('MTposFAC', 'Cont'))
+
+## Get DESeq2 results for each comparison of interest
+## intgroup specifies which metadata column your filter_on_list refers to
+results <- mapply(extractFilteredDESeqResults,
+                  comparison = my_comparisons,
+                  filt_groups = filter_on_list, 
+                  intgroup = 'Group',
+                  USE.NAMES = FALSE)
+names(results) <- lapply(results, function(x) x@metadata$contrast)
+```
+
+```{r DGE_table_function}
+## Can edit this if you want to adjust visualization outputs
+generateDGEDatatable <- function(DESeq_result){
+  dge_data <- data.frame(DESeq_result) %>% 
+    arrange(pvalue) %>%
+    select(baseMean, log2FoldChange, lfcSE, padj) %>% 
+    filter(padj < analysis$analysis_config$alpha) %>% 
+    mutate(baseMean=round(baseMean))%>%
+    na.omit() %>% 
+    rownames_to_column()
+  
+  DT::datatable(dge_data,
+    rownames = FALSE,
+    colnames = c('Gene',
+      'Base mean expression', 
+      'Log2 fold change',
+      'Fold change std. error', 
+      'Adj. p-value'), 
+    caption='DESeq2 output for this comparison, significant genes only',
+    filter='top',
+    autoHideNavigation = TRUE,
+    extensions = c('Buttons', 'Scroller'),
+    options = list(
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv'),
+      deferRender = TRUE
+    )) %>%
+    formatRound(c('log2FoldChange','lfcSE'), digits=2) %>%
+    formatSignif('padj')
+}
+```
+
+```{r GSEA_table_function}
+## Can edit this if you want to adjust visualization outputs
+generateGSEADatatable <- function(GSEA_result){
+  gsea_data <- GSEA_result %>%
+    filter(size>5) %>%
+    arrange(pval) %>%
+    group_by(source) %>%
+    slice_head(n=25) %>% 
+    select(pathway, source, pval,padj,NES,size) %>%
+    arrange(pval)
+  
+  DT::datatable(gsea_data,
+    rownames = FALSE,
+    filter='top',
+    autoHideNavigation = TRUE,
+    caption='GSEA enrichment results, top from each source') %>%
+  formatRound(c('pval','padj','NES'), digits=3)
+}
+```
+
+### Comparison 1
+
+```{r}
+summary(results$Group_FAC_vs_Cont)
+```
+
+```{r}
+generateVolcanoPlot(results$Group_FAC_vs_Cont)
+```
+
+```{r}
+generateDGEDatatable(results$Group_FAC_vs_Cont)
+```
+
+```{r, fig.height=8}
+heatmapFromGenelist(geneList = getTopNGenes(results$Group_FAC_vs_Cont),
+                    baseline_grouping = 'Group',
+                    baseline = 'Cont',
+                    data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+***
+
+## Genes of interest
+
+```{r, fig.height=10}
+## creating an arbitrary genelist
+geneList <- unique(unlist(lapply(results, getTopNGenes, N=10)))
+
+## Pass in a genelist
+heatmapFromGenelist(geneList,
+                    baseline_grouping = 'Group',
+                    baseline = 'Cont',
+                    data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+***
+
+## GSEA
+
+
+```{r GSEA_setup}
+gmt.file <- list()
+
+## See available genesets
+# msigdbr_species()
+# all_gene_sets = msigdbr(species = "Homo sapiens")
+# head(all_gene_sets)
+
+m_t2g_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:REACTOME") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_biocarta <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:BIOCARTA") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_h <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gene_symbol, gs_name)
+gmt.file <- unstack(bind_rows(m_t2g_reactome,m_t2g_h,m_t2g_biocarta,m_t2g_kegg))
+
+## Manually specify gmt.files
+##gmt.file <- append(gmt.file, gmtPathways(file.path(a)))
+```
+
+### individual
+
+```{r, fig.height=10}
+## run individual results
+## This is mouse data using human GSEA sets so not many pathways work
+gsea_result_1 <- runfgsea(results$Group_FAC_vs_Cont,
+                        gmt.file,
+                        minSize = 1,
+                        breakdown_pathway_names = TRUE)
+
+gseaDotplot_single(gsea_result_1, signif_only = FALSE, filter_source = 'REACTOME')
+```
+
+```{r, fig.height=10}
+gsea_result_2 <- runfgsea(results$Group_LiproxposFAC_vs_Cont,
+                        gmt.file,
+                        minSize = 1,
+                        breakdown_pathway_names = TRUE)
+
+gseaDotplot_single(gsea_result_2, signif_only = FALSE, filter_source = 'REACTOME')
+```
+
+
+### joint
+
+```{r}
+## joint GSEA
+combine_GSEA_results <- function(gsea_results,
+                                 pathways){
+  gsea_results <- lapply(gsea_results, function(x){x %>% filter(pathway %in% pathways)})
+  gsea_results <- data.table::rbindlist(gsea_results, idcol='ID')
+}
+
+pathways = c('REACTOME_SIGNALING_BY_GPCR', 'REACTOME_SIGNALING_BY_NTRKS')
+gsea_results <- list('FAC vs Cont' = gsea_result_1, 'LiproxposFAC vs Cont' = gsea_result_2)
+joint_GSEA_results <- combine_GSEA_results(gsea_results, pathways)
+```
+
+
+```{r}
+gseaDotplot_joint(joint_GSEA_results)
+```
+
+## Writing results
+
+```{r}
+writeDESeqResults(results)
+```
+
+```{r}
+writefGSEAResults(gsea_results)
+```
+
+## Render outfile
+
+```{r}
+rmarkdown::render(here::here('scripts/bulk_rnaseq_analysis_template.format.Rmd'),
+                  output_file = 'Analysis_report.html',
+                  output_dir = here::here('reports'),
+                  params = list(
+                    title = 'Bulk RNA Analysis Report')
+                  )
+```
+

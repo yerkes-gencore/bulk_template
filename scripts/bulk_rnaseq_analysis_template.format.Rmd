@@ -1,0 +1,124 @@
+---
+title: "bulk_RNAseq_Analysis"
+author: "DTG"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+```
+
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+
+# QC {.tabset}
+
+<!-- QC images can be accessed from the analysis$plots slot -->
+
+## PCA
+
+```{r, fig.height=6, fig.width=8}
+print(analysis$plots$pca)
+```
+
+## Sample Info
+
+```{r}
+knitr::kable((analysis$sampleTable), position='center', table.attr="style='width:100%;'", format='html') %>%
+    kable_styling(full_width = TRUE)
+```
+
+# DGE {.tabset}
+
+This section of the report analyses gene expression between groups of samples within the study. Changes in gene expression between groups are usually reported on a log2 scale. The significance of a detected change in expression is reported in a raw/nominal p-value and a multiple-testing corrected/adjusted p-value that accounts for the large number of tests conducted in differential gene expression (DGE) and the inherent false positive rate assumed with frequentest p-values.
+
+Each tab has results from a specific comparison within the study. Each tab shows 
+
+1. A summary of significantly differentially expressed genes (DGE)
+
+2. A volcano plot of DGE
+
+3. A table of all significant DGE
+
+The order of terms in tab labeling informs how to interpret results. For log-fold change and enrichment, the first listed group is the numerator and the second is the denominator. So in a comparison of X vs Y, a positive log-fold change means the gene is more highly expressed in X, while a negative change means the gene is more highly expressed in Y. 
+
+***
+
+## Comp1
+
+```{r}
+generateVolcanoPlot(results$Group_FAC_vs_Cont)
+```
+
+```{r}
+generateDGEDatatable(results$Group_FAC_vs_Cont)
+```
+
+```{r, fig.height=8}
+heatmapFromGenelist(geneList = getTopNGenes(results$Group_FAC_vs_Cont),
+                    baseline_grouping = 'Group',
+                    baseline = 'Cont',
+                    data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+***
+
+# Genes of interest {.tabset}
+
+These heatmaps show the relative expression (regularized and log2 transformed) of genes for each sample normalized to the baseline (mean expression for pre-treatment samples). Individual samples are grouped within their treatment/timepoint. If you have genes you are interested in seeing from your study, we can plot them here.
+
+## Top genes from whole study
+
+```{r, fig.height=10}
+## creating an arbitrary genelist
+geneList <- unique(unlist(lapply(results, getTopNGenes, N=10)))
+
+## Pass in a genelist
+heatmapFromGenelist(geneList,
+                    baseline_grouping = 'Group',
+                    baseline = 'Cont',
+                    data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+***
+
+# GSEA
+
+The order of terms in tab labeling informs how to interpret results. For log-fold change and enrichment, the first listed group is the numerator and the second is the denominator. So in a comparison of X vs Y, a positive enrichment relates to enrichment in X, and negative enrichment indicates greater enrichment in Y. 
+
+Gene Set Enrichment Analysis (GSEA) is a statistical approach to test systematic changes in groups of genes corresponding to biological pathways. A pathway is generally 'enriched' in one study group if the genes in that pathway are systematically up or down regulated in a manner and magnitude that is unlikely to be due to chance. Read more about GSEA [here](https://www.gsea-msigdb.org/gsea/index.jsp)
+
+## Individual
+
+```{r, fig.height=10}
+gseaDotplot_single(gsea_result_1, signif_only = FALSE, filter_source = 'REACTOME')
+```
+
+```{r, fig.height=10}
+gseaDotplot_single(gsea_result_2, signif_only = FALSE, filter_source = 'REACTOME')
+```
+
+## Joint
+
+```{r}
+gseaDotplot_joint(joint_GSEA_results)
+```
