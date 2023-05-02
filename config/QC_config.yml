@@ -11,8 +11,8 @@ dropSamples:
 -
 # Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
 pcaMapping: 
-  color: 
-  shape: 
+  color: Group
+  shape: Group
   label: SampleID
   path: 
   ellipse: 
