@@ -199,6 +199,7 @@ print(analysis$plots$pca)
 
 ```{r}
 writeCountTables(analysis,
+                 normalized = FALSE,
                  generate_GSEA_app_tables = FALSE,
                  write_sample_table = TRUE)
 ```
