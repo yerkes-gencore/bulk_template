@@ -73,7 +73,7 @@ analysis$analysis_config <- yaml.load_file(here("config/analysis_config.yml"))
 
 ```{r}
 ## one last safety check to make sure metadata and samples are properly associated
-stopifnot(colnames(analysis$ddsDrop) == analysis$sampleTable$SampleID)
+stopifnot(colnames(analysis$dds) == analysis$sampleTable$SampleID)
 
 design(analysis$dds) <- as.formula(paste0("~ ",
                                           analysis$analysis_config$design))
