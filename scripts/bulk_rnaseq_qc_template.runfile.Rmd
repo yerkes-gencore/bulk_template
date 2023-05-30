@@ -36,7 +36,7 @@ counts <- DESeq2::counts
 here <- here::here
 ```
 
-## Study overview
+
 
 ```{r reset_analysis_obj, eval=TRUE, include=FALSE}
 # This is moved out of the setup block to avoid accidentally overwriting your
@@ -44,10 +44,14 @@ here <- here::here
 analysis = list()
 ```
 
+# Load config
+
 ```{r load_config, include=FALSE}
 # Store config with results object for record keeping
 analysis$qc_config <- yaml.load_file(here("config/QC_config.yml"))
 ```
+
+# Load samplesheet
 
 ```{r sample_metadata_setup}
 ## Build your own
@@ -83,6 +87,8 @@ analysis$sampleTable$FileID <- as.character(analysis$sampleTable$FileID)
 sample_metadata_table
 ```
 
+# Load counts tables
+
 ```{r read_counts_tables, include=FALSE}
 STARreadSuffix <- "_ReadsPerGene.out.tab"
 readfiles <- sapply(
@@ -100,6 +106,8 @@ raw_counts <- outs$read_counts
 # order counts as they are in the sampletable
 raw_counts <- raw_counts[,analysis$sampleTable$FileID]
 ```
+
+# Load GTF
 
 ```{r gene_names, include=TRUE}
 geneInfoTab <- read_tsv(file.path(analysis$qc_config$referenceDir,
@@ -122,6 +130,8 @@ raw_counts_ensembl <- raw_counts
 rownames(raw_counts) <- make.names(gene_names, unique=TRUE)
 ```
 
+# Create DESeq object
+
 ```{r create_dds, include=FALSE}
 ## safety check to make sure metadata and samples are properly associated
 stopifnot(colnames(raw_counts) == analysis$sampleTable$FileID)
@@ -131,14 +141,13 @@ analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
                                        design = as.formula( ~ 1))
 ```
 
-## QC
-
-### Mapping
-
+# Mapping bins plots
 ```{r mapping_plot, fig.width=8, fig.height=6}
 analysis$plots$mapping_bins_plot <- mappingBinsPlot(mapBins)
 analysis$plots$mapping_bins_plot
 ```
+
+# Remove samples
 
 ```{r remove_samples}
 ## Removing samples specified in the config. 
@@ -165,7 +174,7 @@ if (!is.null(unlist(analysis$qc_config$dropSamples))){
 # sample_order <- droplevels(sample_order)
 ```
 
-
+# VST and RLD
 
 ```{r vst_and_ddsDrop}
 analysis$dds <- DESeq(analysis$dds, parallel = TRUE)
@@ -178,7 +187,7 @@ assays(analysis$dds)$rld <- rlog(analysis$dds,
                                  fitType = "parametric")
 ```
 
-### Relative Log Expression (RLE) normalization
+# RLE plots
 
 Library size normalization of read counts with hypothesis that most genes are 
 not differentially expressed
@@ -189,7 +198,7 @@ analysis$plots$RLE_raw <- rle_plots$RLE_raw
 analysis$plots$RLE_norm <- rle_plots$RLE_norm
 ```
 
-### PCA
+# PCA
 
 Exploring projections of expression profiles onto low dimensional space using a 
 limited number of highly variable features. This will give us an estimate of 
@@ -200,6 +209,8 @@ analysis$plots$pca <- plotPCAFromConfig(analysis)
 print(analysis$plots$pca)
 ```
 
+# Write tables
+
 ```{r}
 writeCountTables(analysis,
                  normalized = FALSE,
@@ -207,10 +218,14 @@ writeCountTables(analysis,
                  write_sample_table = TRUE)
 ```
 
+# Save object
+
 ```{r}
 if (!dir.exists(here('saved_rds_objects'))){dir.create(here('saved_rds_objects'))}
 saveRDS(analysis, here('saved_rds_objects/analysis_post_QC.Rds'))
 ```
+
+# Render report
 
 ```{r}
 rmarkdown::render(here::here('scripts/bulk_rnaseq_qc_template.format.Rmd'),
