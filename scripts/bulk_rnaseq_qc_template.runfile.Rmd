@@ -89,7 +89,7 @@ readfiles <- sapply(
                   pattern = sid, full.names = TRUE),
               "/", sid, STARreadSuffix)})
           
-outs <- parseReadPerGeneFiles(readfiles, 'unstranded')
+outs <- parseReadPerGeneFiles(readfiles, analysis$qc_config$libraryType)
 
 mapBins <- outs$map_bins
 raw_counts <- outs$read_counts
