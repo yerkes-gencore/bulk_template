@@ -94,12 +94,8 @@ outs <- parseReadPerGeneFiles(readfiles, 'unstranded')
 mapBins <- outs$map_bins
 raw_counts <- outs$read_counts
 
-colnames(raw_counts) <- plyr::mapvalues(colnames(raw_counts), 
-                                    from = analysis$sampleTable$FileID,
-                                    to = as.character(analysis$sampleTable$Label) )
-
 # order counts as they are in the sampletable
-raw_counts <- raw_counts[,as.character(analysis$sampleTable$Label)]
+raw_counts <- raw_counts[,analysis$sampleTable$FileID]
 ```
 
 ```{r gene_names, include=TRUE}
@@ -125,7 +121,7 @@ rownames(raw_counts) <- make.names(gene_names, unique=TRUE)
 
 ```{r create_dds, include=FALSE}
 ## safety check to make sure metadata and samples are properly associated
-stopifnot(colnames(raw_counts) == as.character(analysis$sampleTable$Label))
+stopifnot(colnames(raw_counts) == analysis$sampleTable$FileID)
 
 analysis$dds <- DESeqDataSetFromMatrix(raw_counts,
                                        analysis$sampleTable,
