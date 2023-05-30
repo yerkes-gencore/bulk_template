@@ -1,19 +1,20 @@
 # Analysis title
-analysis: p22074_Peijian_Analysis
+analysis: p22315_Sudhir_Analysis
 # STAR reference genome directory use for aligning, should holds "geneInfo.tab" 
-referenceDir: /Volumes/yerkes/genomelab/illumina/runs/Genome_references/mus_musculus/GRCm38/ensembl_102/GRCm38_102_S2.7.9a 
+referenceDir: /Volumes/yerkes/genomelab/illumina/runs/Genome_references/macaca_mulatta/mmul10/ensembl_104/star_index_2.7.9a/
 # STAR feature counts files directory
-alignmentDir: /Volumes/yerkes/genomelab/illumina/runs/Analysis/2022_Analyses/p22074_Peijian/p22074_Peijian_Processing/S2.7.9a_GRCm38
-# column of the STAR output file to draw from
-libraryType: unstranded
+alignmentDir: /Volumes/yerkes/genomelab/illumina/runs/Analysis/2023_Analyses/p22315_Sudhir/p22315_Sudhir_Processing
+# column of the STAR output file to draw from (unstranded, sense, or antisense)
+libraryType: antisense
 # Samples to drop, using the same names as the "sample ID" column of the exp_design_template
 dropSamples:
 -
 # Metadata to use for PCA plot overlays. Use column names in the exp_design file. Leave blank to ignore aes
 pcaMapping: 
-  color: Group
-  shape: Group
+  color: Individual
+  shape: Celltype
   label: SampleID
   path: 
   ellipse: 
-
+# Suffix of files produced by STAR
+STARreadSuffix: "_ReadsPerGene.out.tab"
