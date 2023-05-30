@@ -1,6 +1,6 @@
 ---
 title: "bulk_RNAseq_QC"
-author: "EPRC Gencore"
+author: "ENPRC Gencore"
 date:  "`r Sys.Date()`"
 output: 
   rmdformats::robobook:
