@@ -113,14 +113,15 @@ names(results) <- lapply(results, function(x) x@metadata$contrast)
 
 ```{r DGE_table_function}
 ## Can edit this if you want to adjust visualization outputs
-generateDGEDatatable <- function(DESeq_result){
+generateDGEDatatable <- function(DESeq_result,
+                                 alpha = analysis$analysis_config$alpha){
   dge_data <- data.frame(DESeq_result) %>% 
+    rownames_to_column('Gene') %>% 
     arrange(pvalue) %>%
-    select(baseMean, log2FoldChange, lfcSE, padj) %>% 
-    filter(padj < analysis$analysis_config$alpha) %>% 
+    select(Gene, baseMean, log2FoldChange, lfcSE, padj) %>% 
+    filter(padj < alpha) %>% 
     mutate(baseMean=round(baseMean))%>%
-    na.omit() %>% 
-    rownames_to_column()
+    na.omit() 
   
   DT::datatable(dge_data,
     rownames = FALSE,
