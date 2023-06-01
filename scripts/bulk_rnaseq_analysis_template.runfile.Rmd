@@ -178,6 +178,15 @@ generateDGEDatatable(results$Group_FAC_vs_Cont)
 ```
 
 ```{r, fig.height=8}
+## This is a complicated example to show functionality. You can normalize the
+## expression to the median of a group of samples using baseline_grouping 
+## and baseline_group arguments, where baseline_grouping is a metadata column
+## and baseline_group is a level of that column. If you just want to use all samples 
+## to calculate median expression, leave one of the baseline arguments as NULL. 
+## Column splitting separates samples into blocks based on the column number.
+## e.g. column split = c(rep(1,3), rep(2,4), rep(3,8)) makes the first block have 
+## 3 samples, the second have 4, and the third have 8. Labels can be provided
+## with slice_labels
 heatmapFromGenelist(geneList = getTopNGenes(results$Group_FAC_vs_Cont),
                     baseline_grouping = 'Group',
                     baseline = 'Cont',
