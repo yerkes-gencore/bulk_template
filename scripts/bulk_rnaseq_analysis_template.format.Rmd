@@ -1,6 +1,6 @@
 ---
-title: "bulk_RNAseq_Analysis"
-author: "DTG"
+title: "bulk RNA analysis"
+author: "ENPRC Genomics Core"
 date:  "`r Sys.Date()`"
 output: 
   rmdformats::robobook:
