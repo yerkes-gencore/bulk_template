@@ -86,12 +86,15 @@ my_contrasts <- limma::makeContrasts(
   CelltypeBonemarrow_CD19posCD138pos-CelltypeBonemarrow_CD19negCD138pos,
   (CelltypeBonemarrow_CD19posCD138pos+CelltypeBonemarrow_CD19posCD138neg)/2 -
     (CelltypeBonemarrow_CD19negCD138neg-CelltypeBonemarrow_CD19negCD138pos)/2,
-  levels = colnames(analysis$dds$modelMatrix))
+  levels = colnames(model.matrix(design(analysis$dds), colData(analysis$dds))))
 
 ## Extract results for one contrast
-DESeq_results <- extractFilteredDESeqResults2(analysis$dds, my_contrasts[,1], max_min_samples = 1)
+DESeq_results <- extractFilteredDESeqResults(analysis$dds, my_contrasts[,1], max_min_samples = 1)
 ## Or apply to whole matrix
-DESeq_results <- apply(my_contrast, 2, extractFilteredDESeqResults, dds = analysis$dds)
+DESeq_results <- apply(my_contrasts, 2, extractFilteredDESeqResults, dds = analysis$dds)
+
+## Remame results for easier recall later
+names(DESeq_results) <- c('A_vs_B', 'C_vs_D')
 ```
 
 ```{r DGE_table_function}
@@ -150,15 +153,15 @@ generateGSEADatatable <- function(GSEA_result){
 ### Comparison 1
 
 ```{r}
-summary(results$Group_FAC_vs_Cont)
+summary(DESeq_results$Group_FAC_vs_Cont)
 ```
 
 ```{r}
-generateVolcanoPlot(results$Group_FAC_vs_Cont)
+generateVolcanoPlot(DESeq_results$Group_FAC_vs_Cont)
 ```
 
 ```{r}
-generateDGEDatatable(results$Group_FAC_vs_Cont)
+generateDGEDatatable(DESeq_results$Group_FAC_vs_Cont)
 ```
 
 ```{r, fig.height=8}
@@ -171,7 +174,7 @@ generateDGEDatatable(results$Group_FAC_vs_Cont)
 ## e.g. column split = c(rep(1,3), rep(2,4), rep(3,8)) makes the first block have 
 ## 3 samples, the second have 4, and the third have 8. Labels can be provided
 ## with slice_labels
-heatmapFromGenelist(geneList = getTopNGenes(results$Group_FAC_vs_Cont),
+heatmapFromGenelist(geneList = getTopNGenes(DESeq_results$Group_FAC_vs_Cont),
                     baseline_grouping = 'Group',
                     baseline = 'Cont',
                     data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
@@ -230,7 +233,7 @@ gmt.file <- unstack(bind_rows(m_t2g_reactome,m_t2g_h,m_t2g_biocarta,m_t2g_kegg))
 ```{r, fig.height=10}
 ## run individual results
 ## This is mouse data using human GSEA sets so not many pathways work
-gsea_result_1 <- runfgsea(results$Group_FAC_vs_Cont,
+gsea_result_1 <- runfgsea(DESeq_results$Group_FAC_vs_Cont,
                         gmt.file,
                         minSize = 1,
                         breakdown_pathway_names = TRUE)
@@ -239,7 +242,7 @@ gseaDotplot_single(gsea_result_1, signif_only = FALSE, filter_source = 'REACTOME
 ```
 
 ```{r, fig.height=10}
-gsea_result_2 <- runfgsea(results$Group_LiproxposFAC_vs_Cont,
+gsea_result_2 <- runfgsea(DESeq_resultsGroup_LiproxposFAC_vs_Cont,
                         gmt.file,
                         minSize = 1,
                         breakdown_pathway_names = TRUE)
