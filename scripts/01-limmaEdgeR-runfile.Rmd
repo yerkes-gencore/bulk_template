@@ -1,0 +1,83 @@
+---
+title: "bulk_RNAseq_Analysis"
+author: "ENPRC Genomics Core"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+```
+
+# Libraries
+
+```{r}
+library(tidyverse)
+library(limma)
+library(edgeR)
+library(here)
+library(msigdbr)
+source(here("R/voomByGroup.R"))
+```
+
+
+# Outline of workflow
+
+1. Read in data and create `bulk` object
+  - Read in counts from STAR output
+  - Add sample metadata to `bulk` object
+  - Add design to `bulk` object
+2. Filter by expression
+  - Run `FilterByExpr()`
+  - Visualize library sizes and gene counts before and after filtering
+3. PCA
+  - Using ggplot version of output of `plotMDS()`
+4. Define contrasts
+  - Keep this separate from the `bulk` object for flexibility
+5. DE diagnostics
+  - Run `voomLmFit()` or `glmQLFit()`
+  - Generate results tables
+  - Plot MD
+  - Plot p-value distributions
+  - Summarize DEG counts in each contrast
+  - Export results list to excel file
+
+# 0 - Custom functions
+
+To do: Move this to `R/` and/or `gencoreBulk` if these prove useful
+
+# 1 - Read in data and create `bulk` object
+  - Read in counts from STAR output
+  - Add sample metadata to `bulk` object
+  - Add design to `bulk` object
+  
+# 2 - Filter by expression
+  - Run `FilterByExpr()`
+  - Visualize library sizes and gene counts before and after filtering
+  
+# 3 - PCA
+  - Using ggplot version of output of `plotMDS()`
+  
+# 4 - Define contrasts
+  - Keep this separate from the `bulk` object for flexibility
+  
+# 5 - DE diagnostics
+  - Run `voomLmFit()` or `glmQLFit()`
+  - Generate results tables
+  - Plot MD
+  - Plot p-value distributions
+  - Summarize DEG counts in each contrast
+  - Export results list to excel file
+
+
+
+
+
+
+
