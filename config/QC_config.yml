@@ -1,9 +1,9 @@
 # Analysis title
 analysis: p22315_Sudhir_Analysis
 # STAR reference genome directory use for aligning, should holds "geneInfo.tab" 
-referenceDir: /Volumes/yerkes/genomelab/illumina/runs/Genome_references/macaca_mulatta/mmul10/ensembl_104/star_index_2.7.9a/
+referenceDir: /yerkes-cifs/runs/Genome_references/macaca_mulatta/mmul10/ensembl_104/star_index_2.7.9a/
 # STAR feature counts files directory
-alignmentDir: /Volumes/yerkes/genomelab/illumina/runs/Analysis/2023_Analyses/p22315_Sudhir/p22315_Sudhir_Processing
+alignmentDir: /yerkes-cifs/runs/Analysis/2023_Analyses/p22315_Sudhir/p22315_Sudhir_Processing
 # column of the STAR output file to draw from (unstranded, sense, or antisense)
 libraryType: antisense
 # Samples to drop, using the same names as the "sample ID" column of the exp_design_template

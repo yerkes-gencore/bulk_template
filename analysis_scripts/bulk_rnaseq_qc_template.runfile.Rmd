@@ -193,7 +193,7 @@ Library size normalization of read counts with hypothesis that most genes are
 not differentially expressed
 
 ```{r rle, fig.width = 6, fig.height=5}
-rle_plots <- checkRLE(analysis)
+rle_plots <- checkRLE(analysis$dds)
 analysis$plots$RLE_raw <- rle_plots$RLE_raw
 analysis$plots$RLE_norm <- rle_plots$RLE_norm
 ```
