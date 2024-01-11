@@ -2,11 +2,23 @@
 
 Click the green button in the upper-right corner to make a new repo using this as the template, or use GitHub CLI to make a new repo from this template.
 
+1. Edit the config files for your study
+2. Create an experimental design table. The script `helper_scripts/generate_experimental_design_sheet.R` can
+be a good starting point. You will need to fill in study metadata.
+3. Use the `analysis_scripts/bulk_rnaseq_qc_template.runfile.Rmd` to perform QC and create
+a standalone object. This script is relatively 'push button' if the config sheets
+are set up correctly, so you should just be able to run all chunks.
 *The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo. See the link for install instructions*
+4. Run the `analysis_scripts/bulk_rnaseq_analysis_template.runfile.Rmd`. You will need to
+set up an experimental formula, and likely make other edits.
 
-Assuming the config is set up correctly (see next section), you can execute the script by running the `scripts/bulk_rnaseq_qc_template.runfile.Rmd`. This should load all data, set up the analysis objects, and render the initial QC report in the reports folder.  
+## Template files ##
 
- ### Experimental Design Table ###
+### Config ###
+
+A yaml-style config specifies variables to be used in the script. Here you specify the STAR output directory, STAR reference directory (used to rename genes from IDs to symbols), PCA mapping aesthetics, etc. 
+
+### Experimental Design Table ###
  
 The template relies on metadata provided in a table format. The table should include the following fields:
 
@@ -25,9 +37,3 @@ An example design table
 |p22074-s012_MTposFAC3_S152     |	p22074-s012	| MTposFAC      |	MTposFAC |	MTposFAC_S152 |
 | … | … | … | … | … |
 | #Required, unique and specific based on file names | #Required, unique, anything	| Not required	| Not required	| Not required |
-
-### Config ###
-
-A yaml-style config specifies variables to be used in the script. Here you specify the STAR output directory, STAR reference directory (used to rename genes from IDs to symbols), PCA mapping aesthetics, etc. 
-
-
