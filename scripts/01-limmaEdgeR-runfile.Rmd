@@ -23,7 +23,7 @@ library(limma)
 library(edgeR)
 library(here)
 library(msigdbr)
-source(here("R/voomByGroup.R"))
+# source(here("R/voomByGroup.R"))
 ```
 
 
@@ -53,10 +53,141 @@ source(here("R/voomByGroup.R"))
 To do: Move this to `R/` and/or `gencoreBulk` if these prove useful
 
 # 1 - Read in data and create `bulk` object
-  - Read in counts from STAR output
-  - Add sample metadata to `bulk` object
-  - Add design to `bulk` object
-  
+
+```{r}
+## `bulk` object will contain project metadata, sample metadata, counts tables, and model fits
+bulk <- list()
+```
+
+## 1.1 - Read/set project config
+
+May move this to a yaml as for the DESeq2 version. Leaving here for clarity.
+
+```{r}
+bulk$md$project <- "p23131_Tomas_RNAseq"
+bulk$md$refDir <- "/yerkes-cifs/runs/Genome_references/composite/macaca_mulatta_siv/Mmul10_SIVsm804ECL757/STAR-2.7.9a"
+bulk$md$alignDir <- "/yerkes-cifs/runs/Analysis/2023_Analyses/p23131_Tomas/processing/STAR-2.7.9a"
+bulk$md$dropSamples <- c()
+bulk$md$libraryType <- "antisense"
+bulk$md$STARreadSuffix <- "_ReadsPerGene.out.tab"
+
+## Subset of samples from p23131_Tomas project for demonstration purposes
+bulk$md$sampleTable <- tibble(
+  fileID = c("p23131-s008_RJu20-April-6-2023-Day-0-Inclacumab",
+               "p23131-s029_RLn21-May-18-2023-Day-0-Inclacumab",
+               "p23131-s006_RRk19-April-6-2023-Day-0-Inclacumab",
+               "p23131-s018_RJu20-April-27-2023-Day-21-post-infection-Inclacumab",
+               "p23131-s039_RLn21-June-15-2023-Day-21-post-infection-Inclacumab",
+               "p23131-s016_RRk19-April-27-2023-Day-21-post-infection-Inclacumab",
+               "p23131-s009_RCn20-April-6-2023-Day-0",
+               "p23131-s030_RDd21-May-18-2023-Day-0",
+               "p23131-s026_RHy19-May-18-2023-Day-0",
+               "p23131-s019_RCn20-April-27-2023-Day-21-post-infection",
+               "p23131-s040_RDd21-June-15-2023-Day-21-post-infection",
+               "p23131-s036_RHy19-June-15-2023-Day-21-post-infection"),
+  animalID = c("RJu20", "RLn21", "RRk19", 
+               "RJu20", "RLn21", "RRk19",
+               "RCn20", "RDd21", "RHy19",
+               "RCn20", "RDd21", "RHy19"),
+  day = c("D0", "D0", "D0", 
+          "D21", "D21", "D21",
+          "D0", "D0", "D0", 
+          "D21", "D21", "D21"),
+  trt = c("I", "I", "I", 
+          "I", "I", "I",
+          "U", "U", "U", 
+          "U", "U", "U")
+)
+
+bulk$md$sampleTable <- bulk$md$sampleTable %>%
+  mutate(grp = paste0(trt, "_", day),
+         sampleID = paste0(animalID, "_", grp))
+
+```
+
+## 1.2 - Read in counts from STAR output and create DGEList object
+
+### Read in counts and mapping stats
+```{r}
+## Assemble full path of each read file
+bulk$md$sampleTable$readPath <- 
+  here(bulk$md$alignDir, bulk$md$sampleTable$fileID, paste0(bulk$md$sampleTable$fileID, bulk$md$STARreadSuffix))
+
+## STAR puts mapping stats in the top 4 lines of the counts table files *ReadsPerGene.out.tab, so can't use edgeR::readDGE() out of the box
+counts_tmp <- parseReadPerGeneFiles(file.paths = setNames(bulk$md$sampleTable$readPath, 
+                                                          nm = bulk$md$sampleTable$sampleID), 
+                                    library.type = bulk$md$libraryType)
+
+## Save mapping stats into project metadata for plotting later
+bulk$md$mapBins <- counts_tmp$map_bins
+```
+
+### Create DGEList
+```{r}
+bulk$dge <- DGEList(counts = counts_tmp$read_counts, 
+                    samples = bulk$md$sampleTable %>% dplyr::select(-readPath), # remove paths from dge sample metadata because they are really long
+                    group = bulk$md$sampleTable$grp)
+
+## Don't need this anymore
+rm(counts_tmp)
+```
+
+### Assign gene symbols from reference gtf as gene IDs
+```{r}
+## STAR output may use Ensembl IDs as gene IDs, in which case, use gtf to assign gene symbols where possible
+geneInfoTab <- read_tsv(here(bulk$md$refDir, "geneInfo.tab"),
+                        skip = 1,
+                        col_names = c("gene_id","gene_symbol","gene_type"))
+
+# Remove samples if there are fewer total fragment counts than features
+lowcounts <- colSums(bulk$dge$counts) < nrow(geneInfoTab)
+stopifnot(!sum(lowcounts)>0)
+
+gene_names <- plyr::mapvalues(rownames(bulk$dge$counts), 
+                              from = geneInfoTab$gene_id,
+                              to = geneInfoTab$gene_symbol)
+
+# Save original ensembl names in case you want to write it out
+raw_counts_ensembl <- bulk$dge$counts
+rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
+```
+
+## 1.3 - Add design to `bulk` object
+
+See `https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html` for detailed guidance on how to choose a design matrix for a given experiment.
+Here we use combined two factors, `trt` and `day`, into a single factor `grp`. Note that this is a repeated measures experiment and we will fit the model using a random effect downstream.
+```{r}
+bulk$md$design <- model.matrix(~ 0 + grp, data = bulk$md$sampleTable)
+```
+
+## 1.4 - Correct gene names based on gtf
+
+```{r gene_names, include=TRUE}
+geneInfoTab <- read_tsv(here(bulk$md$refDir, "geneInfo.tab"),
+                        skip = 1,
+                        col_names = c("gene_id","gene_symbol","gene_type"))
+
+## Remove samples if there are fewer total fragment counts than features
+## Could catch a technical error if data isn't loading correctly (but you should see this in the mapping plot)
+lowcounts <- colSums(bulk$dge$counts) < nrow(geneInfoTab)
+stopifnot(!sum(lowcounts)>0)
+
+gene_names <- plyr::mapvalues(rownames(bulk$dge$counts), 
+                              from=geneInfoTab$gene_id,
+                              to=geneInfoTab$gene_symbol)
+
+## Save original ensembl names in case you want to write it out
+raw_counts_ensembl <- bulk$dge$counts
+rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
+```
+
+## 1.5 - Plot mapping stats
+
+```{r mapping_plot, fig.width=8, fig.height=6}
+mappingBinsPlot(bulk$md$mapBins)
+```
+
+
 # 2 - Filter by expression
   - Run `FilterByExpr()`
   - Visualize library sizes and gene counts before and after filtering
