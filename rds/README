@@ -1,0 +1,9 @@
+## here(rds)
+
+Write .rds files to this directory.
+
+## Structure
+
+I (Micah) like to create a new directory for each report and write selected objects that will be needed for downstream reports there. Then for the next report you can simply read the all the `rds`s from the previous report's `here(rds)`
+
+So at the end of `01-limmaEdgeR-QC-runfile.Rmd` I would create a directory `here(rds/report-01-QC)` and write `bulk` to a `bulk-{Sys.Date()}.rds` file. Then, at the top of `02-limmaEdgeR-QC-runfile.Rmd`, I would read in `bulk-{Sys.Date()}.rds` and continue with the analysis. This implementation is aready set up in the template.
