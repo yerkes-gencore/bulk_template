@@ -221,8 +221,8 @@ writeCountTables(analysis,
 # Save object
 
 ```{r}
-if (!dir.exists(here('saved_rds_objects'))){dir.create(here('saved_rds_objects'))}
-saveRDS(analysis, here('saved_rds_objects/analysis_post_QC.Rds'))
+if (!dir.exists(here('rds'))){dir.create(here('rds'))}
+saveRDS(analysis, here('rds/analysis_post_QC.Rds'))
 ```
 
 # Render report
