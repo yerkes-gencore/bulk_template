@@ -21,8 +21,9 @@ knitr::opts_chunk$set(warning = TRUE,
 library(tidyverse)
 library(limma)
 library(edgeR)
+library(gencoreBulk)
 library(here)
-library(msigdbr)
+# library(msigdbr)
 source(here("R/voomByGroup.R"))
 ```
 
@@ -116,6 +117,89 @@ createResTable <- function(clustObj) {
   return(resultsTable)
 }
 ```
+
+```{r}
+getVoomByGroupData <- function(bulk, group, ...) {
+  vbg <- voomByGroup(counts = bulk$dge$counts, 
+                     design = bulk$md$design, 
+                     group = bulk$dge$samples[[group]], 
+                     plot = "combine", save.plot = TRUE)
+  
+  vbg_plot_data <- 
+    lapply(names(vbg$voom.line), function(grp) {
+      as_tibble(vbg$voom.line[[grp]]) %>%
+        mutate(group = grp) %>%
+        distinct()
+    }) %>% bind_rows()
+    
+  return(vbg_plot_data)
+}
+
+plotVoomByGroupData <- function(vbg_data, ...) {
+  vbg_data %>%
+    ggplot(data = ., aes(x = x, y = y, color = group)) +
+    geom_line() +
+    scale_color_brewer(palette = "Paired") +
+    xlab("log2( count size + 0.5 )") +
+    ylab("Sqrt( standard deviation )") +
+    theme_classic()
+}
+
+ggplotMDS <- function(dge, group = "group", sampleID = "sampleID", gene.selection = "common", ...) {
+  mds_data <- plotMDS(dge, top = 500,
+                      labels = dge$samples[[group]], 
+                      col = col.group, plot = FALSE, 
+                      gene.selection, ...)
+  
+  mds_xy <- mds_data[c("x","y")] %>% as_tibble()
+  mds_xy[[sampleID]] <- colnames(dge)
+  # mds_xy[[sampleID]] <- str_extract(colnames(dge), "(^[A-Za-z0-9]*)")
+  mds_xy <- mds_xy %>% full_join(dge$samples, by = sampleID)
+  
+  x_varex <- round(mds_data$var.explained[1]*100, digits = 0)
+  y_varex <- round(mds_data$var.explained[2]*100, digits = 0)
+  
+  mds_xy %>%
+  ggplot(aes(x = .data$x, y = .data$y, color = .data[[group]], label = .data[[sampleID]])) +
+    geom_text() + 
+    scale_color_brewer(palette = "Paired") +
+    xlab(paste0(mds_data$axislabel, " 1 (", x_varex, "%)")) +
+    ylab(paste0(mds_data$axislabel, " 2 (", y_varex, "%)")) +
+    theme_classic() +
+    theme(aspect.ratio = 1) +
+    coord_cartesian(clip = "off") +
+    ggtitle(ifelse(gene.selection == "common", "PCA", "MDS"))
+}
+```
+
+```{r}
+# Note that this only works for a design with a single factor for the moment
+# To do: Generalize to designs with more 2 or more factors
+makeSamplesPerContrastTable <- function(contr.matrix, bulkObj) {
+  ## Make table of the numerators and denominators of each contrast
+  contr.levels <- tibble(contrast = colnames(contr.matrix))
+  for (icol in 1:ncol(contr.matrix)) {
+    contr.levels[icol, 2] <- names(which(contr.matrix[,icol]==1))
+    contr.levels[icol, 3] <- names(which(contr.matrix[,icol]==-1))
+  }
+  colnames(contr.levels)[2] <- "numerator"
+  colnames(contr.levels)[3] <- "denominator"
+  
+  # Column of sample metadata table to pull grouping factor from
+  fct_name <- names(attr(bulkObj$md$design, "contrasts"))
+  
+  contr.levels_tbl <- contr.levels %>%
+    pivot_longer(cols = -contrast, names_to = "type", values_to = "level") %>%
+    mutate(level = str_remove(level, paste0("^", fct_name))) %>%
+    full_join(count(bulkObj$dge$samples, .data[[fct_name]], name = "nSamples"), 
+              by = c("level" = fct_name)) %>%
+    select(-level) %>%
+    pivot_wider(names_from = type, values_from = nSamples)
+  
+  return(contr.levels_tbl)
+}
+```
+
 
 
 # 1 - Read in data and create `bulk` object
@@ -231,7 +315,8 @@ bulk$md$design <- model.matrix(~ 0 + grp, data = bulk$md$sampleTable)
 ```{r gene_names, include=TRUE}
 geneInfoTab <- read_tsv(here(bulk$md$refDir, "geneInfo.tab"),
                         skip = 1,
-                        col_names = c("gene_id","gene_symbol","gene_type"))
+                        col_names = c("gene_id","gene_symbol","gene_type"),
+                        show_col_types = FALSE)
 
 ## Remove samples if there are fewer total fragment counts than features
 ## Could catch a technical error if data isn't loading correctly (but you should see this in the mapping plot)
@@ -326,70 +411,12 @@ bulk$dge <- bulk$dge[keep.exprs, , keep.lib.sizes=FALSE]
 
 # 3 - Variance-mean trends and PCA
   - Using ggplot version of output of `plotMDS()`
-  
-```{r}
-getVoomByGroupData <- function(bulk, group, ...) {
-  vbg <- voomByGroup(counts = bulk$dge$counts, 
-                     design = bulk$md$design, 
-                     group = bulk$dge$samples[[group]], 
-                     plot = "combine", save.plot = TRUE)
-  
-  vbg_plot_data <- 
-    lapply(names(vbg$voom.line), function(grp) {
-      as_tibble(vbg$voom.line[[grp]]) %>%
-        mutate(group = grp) %>%
-        distinct()
-    }) %>% bind_rows()
-    
-  return(vbg_plot_data)
-}
-
-plotVoomByGroupData <- function(vbg_data, ...) {
-  vbg_data %>%
-    ggplot(data = ., aes(x = x, y = y, color = group)) +
-    geom_line() +
-    scale_color_brewer(palette = "Paired") +
-    xlab("log2( count size + 0.5 )") +
-    ylab("Sqrt( standard deviation )") +
-    theme_classic()
-}
-
-ggplotMDS1 <- function(dge, group = "group", sampleID = "sampleID", gene.selection = "common", ...) {
-  mds_data <- plotMDS(dge, top = 500,
-                      labels = dge$samples[[group]], 
-                      col = col.group, plot = FALSE, 
-                      gene.selection, ...)
-  
-  mds_xy <- mds_data[c("x","y")] %>% as_tibble()
-  mds_xy[[sampleID]] <- colnames(dge)
-  # mds_xy[[sampleID]] <- str_extract(colnames(dge), "(^[A-Za-z0-9]*)")
-  mds_xy <- mds_xy %>% full_join(dge$samples, by = sampleID)
-  
-  x_varex <- round(mds_data$var.explained[1]*100, digits = 0)
-  y_varex <- round(mds_data$var.explained[2]*100, digits = 0)
-  
-  mds_xy %>%
-  ggplot(aes(x = .data$x, y = .data$y, color = .data[[group]], label = .data[[sampleID]])) +
-    geom_text() + 
-    scale_color_brewer(palette = "Paired") +
-    xlab(paste0(mds_data$axislabel, " 1 (", x_varex, "%)")) +
-    ylab(paste0(mds_data$axislabel, " 2 (", y_varex, "%)")) +
-    theme_classic() +
-    theme(aspect.ratio = 1) +
-    coord_cartesian(clip = "off") +
-    ggtitle(ifelse(gene.selection == "common", "PCA", "MDS"))
-}
-```
 
 ## 3.1 - Mean-variance trend by group (i.e. voomByGroup)
 
 ```{r}
-# Plot voom by group plot
-# vbg_data <- getVoomByGroupData(bulk, group = "grp")
-
 vbg_plot <- getVoomByGroupData(bulk, group = "grp") %>%
-    dplyr::filter(.[["cluster"]] == clust) %>%
-    plotVoomByGroupData1()
+    plotVoomByGroupData()
 ```
 
 ## 3.2 - PCA plot
@@ -397,7 +424,7 @@ vbg_plot <- getVoomByGroupData(bulk, group = "grp") %>%
 **To do: add options for elipses, lines, shapes and color scales as in `gencoreBulk::plotPCAFromConfig()`**
 
 ```{r}
-ggplotMDS1(bulk$dge, group = "grp", gene.selection = "common")
+ggplotMDS(bulk$dge, group = "grp", gene.selection = "common")
 ```
 
 ## 3.3 - MDS plot
@@ -408,7 +435,7 @@ Multidimensional scaling plot; distances correspond to BCV between pairs of samp
 > Biological coefficient of variation is the coefficient of variation with which the (unknown) true abundance of the gene varies between replicate RNA samples. It represents the CV that would remain between biological replicates if sequencing depth could be increased indefinitely. 
 
 ```{r}
-ggplotMDS1(bulk$dge, group = "grp", gene.selection = "pairwise")
+ggplotMDS(bulk$dge, group = "grp", gene.selection = "pairwise")
 ```
 
   
@@ -428,30 +455,9 @@ contr.matrix <- makeContrasts(
 
 This is more critical for pseudobulk, but it may be useful to check in cases with highly variable/low sample sizes among a large number of contrasts.
 ```{r}
-## Make table of the numerators and denominators of each contrast
-contr.levels <- tibble(contrast = colnames(contr.matrix))
-for (icol in 1:ncol(contr.matrix)) {
-  contr.levels[icol, 2] <- names(which(contr.matrix[,icol]==1))
-  contr.levels[icol, 3] <- names(which(contr.matrix[,icol]==-1))
-}
-colnames(contr.levels)[2] <- "numerator"
-colnames(contr.levels)[3] <- "denominator"
-
-contr.levels_tbl <- contr.levels %>%
-  pivot_longer(cols = -contrast, names_to = "type", values_to = "level") %>%
-  mutate(level = str_remove(level, "^grp"))
-
-contr.levels_vec <- contr.levels_tbl$level %>% unique() #%>% str_remove("^grp_chl")
-
-nSamplesPerLevel <- contr.levels_tbl %>%
-  mutate(level = str_remove(level, "^grp")) %>%
-  full_join(count(bulk$dge$samples, grp, name = "nSamples"), by = c("level" = "grp"))
-
-limitingLevels_tbl <- nSamplesPerLevel %>%
-  select(-level) %>%
-  pivot_wider(names_from = type, values_from = nSamples)
-
-limitingLevels_tbl %>% knitr::kable()
+# Note that this only works for a design with a single factor for the moment
+# To do: Generalize to designs with more 2 or more factors
+makeSamplesPerContrastTable(contr.matrix, bulk) %>% knitr::kable()
 ```
 
 
