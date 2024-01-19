@@ -1,5 +1,5 @@
 ---
-title: "bulk_RNAseq_Analysis"
+title: "01-limmaEdgeR-QC-runfile"
 author: "ENPRC Genomics Core"
 date:  "`r Sys.Date()`"
 output: 
@@ -39,15 +39,6 @@ source(here("R/voomByGroup.R"))
   - Visualize library sizes and gene counts before and after filtering
 3. PCA
   - Using ggplot version of output of `plotMDS()`
-4. Define contrasts
-  - Keep this separate from the `bulk` object for flexibility
-5. DE diagnostics
-  - Run `voomLmFit()` or `glmQLFit()`
-  - Generate results tables
-  - Plot MD
-  - Plot p-value distributions
-  - Summarize DEG counts in each contrast
-  - Export results list to excel file
 
 ## Report metadata
 
@@ -56,67 +47,13 @@ These variables help assign filenames to outputs and reports so you can rerun th
 ```{r}
 project_name <- "p23131_Tomas_RNAseq"
 report_number <- "01"
-report_title_root <- "QC+DE"
+report_title_root <- "QC"
 ```
 
 
 # 0 - Custom functions
 
 To do: Move this to `R/` and/or `gencoreBulk` if these prove useful
-
-```{r}
-runEdgeRVoomLmFit <- function(bulkObj, contr.matrix, block = NULL, sample.weights = TRUE, var.design = NULL, var.group = NULL, plotVoom = TRUE) {
-  ## This function adapts the limma voom method (Law et al, 2014) to allow for loss of residual degrees of freedom due to exact zero counts (Lun and Smyth, 2017). 
-  ## The function is analogous to calling voom followed by duplicateCorrelation and lmFit except for the modified residual df values and residual standard deviation sigma values.
-  ## If block is specified, then the intra-block correlation is estimated using duplicateCorrelation In that case, the voom weights and the intra-block correlation are each estimated twice to achieve effective convergence.
-  ## Empirical sample quality weights will be estimated if sample.weights=TRUE or if var.design or var.group are non-NULL (Liu et al 2015). In that case, voomLmFit is analogous to running voomWithQualityWeights followed by lmFit.
-  bulkObj$fit <- edgeR::voomLmFit(counts = bulkObj$dge$counts, 
-                                   design = bulkObj$md$design,
-                                   block = block,
-                                   sample.weights = sample.weights,
-                                   var.design = var.design,
-                                   var.group = var.group,
-                                   plot = plotVoom)
-  ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
-  bulkObj$fit <- contrasts.fit(bulkObj$fit, 
-                                contrasts = contr.matrix)
-  ## Run empirical Bayes moderation; borrowing information across all the genes to obtain more precise estimates of gene-wise variability
-  bulkObj$fit <- eBayes(bulkObj$fit, robust=TRUE)
-  ## Plot the model's residual variances against average expression values; demonstrating that the variance is no longer dependednt on the mean expression level
-  plotSA(bulkObj$fit, main="Final model: Mean-variance trend")
-  ## Identify which genes are significantly differentially expressed for each contrast from a fit object containing p-values and test statistics
-  bulkObj$de <- decideTests(bulkObj$fit, lfc = 0)
-  return(bulkObj)
-}
-
-runGlmQLFit <- function(bulkObj, contr.matrix) {
-  bulkObj$dge <- estimateDisp(bulkObj$dge, bulkObj$md$design)
-  plotBCV(bulkObj$dge)
-  bulkObj$fit <- glmQLFit(bulkObj$dge, bulkObj$md$design, robust = TRUE)
-  bulkObj$res <- list()
-  for (i in 1:ncol(contr.matrix)){
-    bulkObj$res[[i]]<- glmQLFTest(bulkObj$fit, contrast = contr.matrix[,i])
-  }
-  names(bulkObj$res) <- colnames(contr.matrix)
-  return(bulkObj)
-}
-
-createResTable <- function(clustObj) {
-  resultsTables_list <- list()
-  for (contrast in colnames(clustObj$fit$coefficients)) {
-    resultsTables_list[[contrast]] <- topTable(clustObj$fit, coef = contrast, n = Inf) %>%
-      # as_tibble(rownames = "gene") %>%
-      dplyr::rename(log2FoldChange = logFC, pvalue = P.Value, padj = adj.P.Val)
-  }
-  
-  resultsTable <- lapply(resultsTables_list, function(one_tbl) {
-    one_tbl %>% rownames_to_column(var = "gene")
-  }) %>% bind_rows(., .id = "contrast") %>%
-    as_tibble()
-  
-  return(resultsTable)
-}
-```
 
 ```{r}
 getVoomByGroupData <- function(bulk, group, ...) {
@@ -171,35 +108,6 @@ ggplotMDS <- function(dge, group = "group", sampleID = "sampleID", gene.selectio
     ggtitle(ifelse(gene.selection == "common", "PCA", "MDS"))
 }
 ```
-
-```{r}
-# Note that this only works for a design with a single factor for the moment
-# To do: Generalize to designs with more 2 or more factors
-makeSamplesPerContrastTable <- function(contr.matrix, bulkObj) {
-  ## Make table of the numerators and denominators of each contrast
-  contr.levels <- tibble(contrast = colnames(contr.matrix))
-  for (icol in 1:ncol(contr.matrix)) {
-    contr.levels[icol, 2] <- names(which(contr.matrix[,icol]==1))
-    contr.levels[icol, 3] <- names(which(contr.matrix[,icol]==-1))
-  }
-  colnames(contr.levels)[2] <- "numerator"
-  colnames(contr.levels)[3] <- "denominator"
-  
-  # Column of sample metadata table to pull grouping factor from
-  fct_name <- names(attr(bulkObj$md$design, "contrasts"))
-  
-  contr.levels_tbl <- contr.levels %>%
-    pivot_longer(cols = -contrast, names_to = "type", values_to = "level") %>%
-    mutate(level = str_remove(level, paste0("^", fct_name))) %>%
-    full_join(count(bulkObj$dge$samples, .data[[fct_name]], name = "nSamples"), 
-              by = c("level" = fct_name)) %>%
-    select(-level) %>%
-    pivot_wider(names_from = type, values_from = nSamples)
-  
-  return(contr.levels_tbl)
-}
-```
-
 
 
 # 1 - Read in data and create `bulk` object
@@ -264,9 +172,10 @@ bulk$md$sampleTable$readPath <-
   here(bulk$md$alignDir, bulk$md$sampleTable$fileID, paste0(bulk$md$sampleTable$fileID, bulk$md$STARreadSuffix))
 
 ## STAR puts mapping stats in the top 4 lines of the counts table files *ReadsPerGene.out.tab, so can't use edgeR::readDGE() out of the box
-counts_tmp <- parseReadPerGeneFiles(file.paths = setNames(bulk$md$sampleTable$readPath, 
-                                                          nm = bulk$md$sampleTable$sampleID), 
-                                    library.type = bulk$md$libraryType)
+counts_tmp <- parseReadPerGeneFiles(
+  file.paths = setNames(bulk$md$sampleTable$readPath, 
+                        nm = bulk$md$sampleTable$sampleID), 
+  library.type = bulk$md$libraryType)
 
 ## Save mapping stats into project metadata for plotting later
 bulk$md$mapBins <- counts_tmp$map_bins
@@ -287,7 +196,8 @@ rm(counts_tmp)
 ## STAR output may use Ensembl IDs as gene IDs, in which case, use gtf to assign gene symbols where possible
 geneInfoTab <- read_tsv(here(bulk$md$refDir, "geneInfo.tab"),
                         skip = 1,
-                        col_names = c("gene_id","gene_symbol","gene_type"))
+                        col_names = c("gene_id","gene_symbol","gene_type"),
+                        show_col_types = FALSE)
 
 # Remove samples if there are fewer total fragment counts than features
 lowcounts <- colSums(bulk$dge$counts) < nrow(geneInfoTab)
@@ -438,189 +348,40 @@ Multidimensional scaling plot; distances correspond to BCV between pairs of samp
 ggplotMDS(bulk$dge, group = "grp", gene.selection = "pairwise")
 ```
 
-  
-# 4 - Define contrasts and check sample sizes per contrast
+# 4 - Export count table and write bulk object rds
 
-## 4.1 - Define contrasts
-
-```{r}
-contr.matrix <- makeContrasts(
-  grpI_D21vsD0 = grpI_D21 - grpI_D0,
-  grpU_D21vsD0 = grpU_D21 - grpU_D0,
-  levels = bulk$md$design
-  )
-```
-  
-## 4.2 - Check sample sizes per contrast level
-
-This is more critical for pseudobulk, but it may be useful to check in cases with highly variable/low sample sizes among a large number of contrasts.
-```{r}
-# Note that this only works for a design with a single factor for the moment
-# To do: Generalize to designs with more 2 or more factors
-makeSamplesPerContrastTable(contr.matrix, bulk) %>% knitr::kable()
-```
-
-
-# 5 - DE diagnostics
-
-## 5.1 - Run `voomLmFit()` or `glmQLFit()`
+## Create a subdir name and keep it consistent across dirs
 
 ```{r}
-bulk <- runEdgeRVoomLmFit(bulk, contr.matrix=contr.matrix, sample.weights = TRUE)
-```
-
-
-## 5.2 - Generate results tables
-
-```{r}
-resultsTable <- createResTable(bulk)
-```
-
-There are two easy ways to access tables split by contrast for different purposes using `for()` or `split()`
-```{r}
-for (contr in unique(resultsTable$contrast)) {
-  resultsTable %>%
-    filter(contrast == contr)
+## Subdir name for `outputs` and `rds`
+subdir <- paste0("report-", report_number, "-", report_title_root)
+## Formatted date for filenames
+getDate <- function() {
+  format(Sys.Date(), "%Y%m%d")
 }
 ```
 
-```{r}
-resultsTable %>%
-  split(., .$contrast)
-```
-
-
-## 5.3 - Plot MD
+## Export count table
 
 ```{r}
-md_data <- resultsTable %>%
-    mutate(signif_dir = ifelse(padj >= 0.05, "NotSig",
-                           ifelse(log2FoldChange < 0, "Down", "Up")) %>%
-             factor(., levels = c("NotSig", "Up", "Down")),
-           signif = padj < 0.05)
-  
-ggplot() +
-  geom_point(data = filter(md_data, !signif),
-             aes(x = AveExpr, y = log2FoldChange), 
-             color = "black", size = 0.1) +
-  geom_point(data = filter(md_data, signif), 
-             aes(x = AveExpr, y = log2FoldChange, color = signif_dir), 
-             size = 0.1) +
-  ylim(-max(abs(md_data$log2FoldChange)), max(abs(md_data$log2FoldChange))) +
-  scale_color_manual(values = c("black", "red", "blue"), drop = FALSE) +
-  theme_bw() +
-  facet_wrap(~contrast)
-```
-
-
-## 5.4 - Plot p-value distributions
-
-```{r}
-resultsTable %>%
-      mutate(`pBH < 0.05` = ifelse(padj < 0.05, "TRUE", "FALSE") %>%
-               factor(., levels = c("TRUE", "FALSE"))) %>%
-    ggplot(data = ., aes(x = pvalue, fill = `pBH < 0.05`)) +
-      geom_histogram(breaks = seq(0,1,0.01)) +
-      scale_fill_manual(values = c("red", "black"), drop=FALSE) +
-      theme_bw() +
-    facet_wrap(~contrast, scales = "free_y")
-```
-
-# 6 - DE results
-
-## 6.1 - Summarize DEG counts in each contrast
-
-```{r}
-n_deg_summary <- resultsTable %>% 
-  group_by(contrast) %>%
-    dplyr::rename(l2fc = log2FoldChange, pBH = padj) %>%
-    summarize(signif_down = sum(pBH < 0.05 & l2fc < 0),
-              nonsignif = sum(pBH >= 0.05),
-              signif_up = sum(pBH < 0.05 & l2fc > 0)) %>%
-  mutate(signif = signif_up + signif_down)
-```
-
-### Table
-```{r}
-n_deg_summary %>%
-  mutate(signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓")) %>%
-  select(contrast, signif_signs) %>%
-  knitr::kable()
-```
-
-### Bar plots
-```{r, fig.width = 12, fig.height = 8}
-n_deg_summary %>%
-  pivot_longer(cols = c(signif_down, signif_up), 
-               names_to = "sign", 
-               values_to = "n_signif") %>%
-  mutate(n_signif = ifelse(sign == "signif_down",
-                           -n_signif, n_signif)) %>%
-  ggplot(aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
-  geom_bar(stat="identity") +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  theme_bw() +
-  ylab("contrast")
-```
-
-
-## 6.2 - Export results list to excel file
-
-Create output dir for this report if it doesn't already exist
-```{r}
-if (!dir.exists(here(paste0("outputs/report-", report_number)))) {
-  dir.create(here(paste0("outputs/report-", report_number)))
+if (!dir.exists(here("outputs/", subdir))) {
+  dir.create(here("outputs/", subdir))
 }
+
+bulk$dge$counts %>% 
+  as_tibble(rownames = "gene") %>%
+  write_csv(., here("outputs/", subdir, paste0("counts-", getDate(), ".rds")))
 ```
 
-### Export excel file with columns for padj and lfc for each contrast
+## Write `bulk` rds
 ```{r}
-resultsTable_for_export <- unique(resultsTable$contrast) %>%
-lapply(., function(contr) {
-  resultsTable %>% 
-    filter(contrast == contr) %>%
-    dplyr::select(gene, l2fc = log2FoldChange, pBH = padj)%>%
-    dplyr::rename_with(~ paste0(contr, "_", .x, recycle0 = TRUE),
-                  all_of(c("l2fc", "pBH")))
-}) %>% 
-  reduce(full_join, by = "gene")
+if (!dir.exists(here("rds/", subdir))) {
+  dir.create(here("rds/", subdir))
+}
 
-resultsTable_for_export_filename <- paste0(
-  project_name, "-", 
-  report_number, "-",
-  report_title_root, "-",
-  "DE_edgeRvoomLmFit_vqw-", 
-  format(Sys.Date(), "%Y%m%d"), ".xlsx"
-  )
-
-c(list("Summary" = n_deg_summary), 
-  list("ResultsTable" = resultsTable_for_export)) %>%
-writexl::write_xlsx(here(paste0("outputs/report-", report_number), resultsTable_for_export_filename))
-```
-
-### Export excel file with columns for padj and lfc for each contrast
-```{r}
-resultsTable_for_export <- unique(resultsTable$contrast) %>%
-lapply(., function(contr) {
-  resultsTable %>% 
-    filter(contrast == contr) %>%
-    dplyr::select(gene, l2fc = log2FoldChange, pBH = padj)%>%
-    dplyr::rename_with(~ paste0(contr, "_", .x, recycle0 = TRUE),
-                  all_of(c("l2fc", "pBH")))
-}) %>% 
-  reduce(full_join, by = "gene")
-
-resultsTable_for_export_filename <- paste0(
-  project_name, "-", 
-  report_number, "-",
-  report_title_root, "-",
-  "DE_edgeRvoomLmFit_vqw-", 
-  format(Sys.Date(), "%Y%m%d"), ".xlsx"
-  )
-
-c(list("Summary" = n_deg_summary), 
-  list("ResultsTable" = resultsTable_for_export)) %>%
-writexl::write_xlsx(here(paste0("outputs/report-", report_number), resultsTable_for_export_filename))
+bulk_prefilt %>%
+  write_rds(., here("rds/", subdir, paste0("bulk_prefilt-", getDate(), ".rds")))
+bulk %>%
+  write_rds(., here("rds/", subdir, paste0("bulk-", getDate(), ".rds")))
 ```
 
