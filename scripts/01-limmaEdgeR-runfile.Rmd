@@ -391,6 +391,7 @@ vbg_plot <- getVoomByGroupData(bulk, group = "grp") %>%
     dplyr::filter(.[["cluster"]] == clust) %>%
     plotVoomByGroupData1()
 ```
+
 ## 3.2 - PCA plot
 
 **To do: add options for elipses, lines, shapes and color scales as in `gencoreBulk::plotPCAFromConfig()`**
@@ -411,7 +412,9 @@ ggplotMDS1(bulk$dge, group = "grp", gene.selection = "pairwise")
 ```
 
   
-# 4 - Define contrasts
+# 4 - Define contrasts and check sample sizes per contrast
+
+## 4.1 - Define contrasts
 
 ```{r}
 contr.matrix <- makeContrasts(
@@ -421,6 +424,37 @@ contr.matrix <- makeContrasts(
   )
 ```
   
+## 4.2 - Check sample sizes per contrast level
+
+This is more critical for pseudobulk, but it may be useful to check in cases with highly variable/low sample sizes among a large number of contrasts.
+```{r}
+## Make table of the numerators and denominators of each contrast
+contr.levels <- tibble(contrast = colnames(contr.matrix))
+for (icol in 1:ncol(contr.matrix)) {
+  contr.levels[icol, 2] <- names(which(contr.matrix[,icol]==1))
+  contr.levels[icol, 3] <- names(which(contr.matrix[,icol]==-1))
+}
+colnames(contr.levels)[2] <- "numerator"
+colnames(contr.levels)[3] <- "denominator"
+
+contr.levels_tbl <- contr.levels %>%
+  pivot_longer(cols = -contrast, names_to = "type", values_to = "level") %>%
+  mutate(level = str_remove(level, "^grp"))
+
+contr.levels_vec <- contr.levels_tbl$level %>% unique() #%>% str_remove("^grp_chl")
+
+nSamplesPerLevel <- contr.levels_tbl %>%
+  mutate(level = str_remove(level, "^grp")) %>%
+  full_join(count(bulk$dge$samples, grp, name = "nSamples"), by = c("level" = "grp"))
+
+limitingLevels_tbl <- nSamplesPerLevel %>%
+  select(-level) %>%
+  pivot_wider(names_from = type, values_from = nSamples)
+
+limitingLevels_tbl %>% knitr::kable()
+```
+
+
 # 5 - DE diagnostics
 
 ## 5.1 - Run `voomLmFit()` or `glmQLFit()`
