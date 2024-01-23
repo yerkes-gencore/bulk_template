@@ -250,8 +250,12 @@ mappingBinsPlot(bulk$md$mapBins)
 
 # 2 - Filter by expression
 
+"The filtering should be based on the grouping factors or treatment factors that will be involved in the differential expression teststested for, rather than on blocking variables that are not of scientific interest in themselves." 
+
+So if you may need to change the `design = bulk$md$design` to `group = {factor of biological interest}` if you've included nuisance variables in the deisgn. See page 14 of EdgeR manual for details: https://www.bioconductor.org/packages/devel/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf
+
 ```{r}
-keep.exprs <- filterByExpr(bulk$dge)
+keep.exprs <- filterByExpr(bulk$dge, design = bulk$md$design)
 ```
 
 ## 2.1 - Gene filtering by expression
