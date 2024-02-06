@@ -9,7 +9,9 @@ be a good starting point. You will need to fill in study metadata.
 a standalone object. This script is relatively 'push button' if the config sheets
 are set up correctly, so you should just be able to run all chunks.
 *The QC template relies on functions from the [gencore-bulk](https://github.com/yerkes-gencore/gencore-bulk) repo. See the link for install instructions*
-4. Run the `analysis_scripts/bulk_rnaseq_analysis_template.runfile.Rmd`. You will need to
+4. Run the model validation scripts to generate an internal report for reviewing model
+design choices (still a WIP).
+5. Run the `analysis_scripts/bulk_rnaseq_analysis_template.runfile.Rmd`. You will need to
 set up an experimental formula, and likely make other edits.
 
 ## Template files ##
