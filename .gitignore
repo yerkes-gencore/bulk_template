@@ -1,9 +1,8 @@
 ## Template-related stuff that's likely too big to git track
 outputs/*
 reports/*.html
-rds/*.rds
-rds/*.Rds
-rds/*.RDS
+rds/*
+!README*
 
 ## R and RStudio-related stuff
 # History files
