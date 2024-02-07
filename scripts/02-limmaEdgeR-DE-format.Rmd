@@ -33,7 +33,9 @@ details > summary {
 
 In this report, ``r report_filename_DE``, we walk through the differential expression analysis. The report is divided into sections focusing on model design, the definition of contrasts, some model fit quality control, and finally the differential expression results.
 
-A separate excel file is also provided with this report with the full results of the model for each contrast queried.
+A separate excel file, ``r resultsTable_filename``, is also provided with this report with the full results of the model for each contrast queried.
+
+Another excel file, ``r GSEA_filename``, is provided with the full results of the gene set enrichment analysis.
 
 # 1 - Study design review
 
@@ -227,7 +229,9 @@ For each database I'm showing a "gsea dot plot" with the top 30 genes with uncor
 - x axis = `ES` (enrichment score)
 - y axis = `pathway`
 
-There's also a stats table for each. Note that you can save each as an excel file to view externally if you like.
+There's also a stats table for each. Note that click the `excel` or `csv` you can save each as a separate file to view externally if you like.
+
+The stats tables have also been collected in a separate excel file, ``r GSEA_filename``.
 
 ```{r}
 chunk_text_gsea_summary <- c(

@@ -245,7 +245,7 @@ lapply(., function(contr) {
 resultsTable_filename <- paste0(
   project_name, "-", 
   report_number, "-",
-  "DE_edgeRvoomLmFit_vqw-", 
+  "DE_results_tables-", 
   getDate(), ".xlsx"
   )
 
@@ -364,16 +364,15 @@ gseaResults_compact <- lapply(names(gsea_results), function(db) {
 })
 names(gseaResults_compact) <- names(gsea_results_fmt)
 
-resultsTable_filename <- paste0(
+GSEA_filename <- paste0(
   project_name, "-", 
   report_number, "-",
-  "GSEA", "-",
-  "resultsTables-", 
+  "GSEA_results_tables", "-",
   getDate(), ".xlsx"
   )
 
 gseaResults_compact %>%
-  writexl::write_xlsx(here("outputs", subdir, resultsTable_filename))
+  writexl::write_xlsx(here("outputs", subdir, GSEA_filename))
 ```
 
 # 6 - Write rds

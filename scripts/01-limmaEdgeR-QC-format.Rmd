@@ -35,6 +35,8 @@ In this report, ``r report_filename_QC``, we walk through the results of running
 
 ## 1 - Study design overview {.tabset}
 
+<!-- Here's a template for presenting two different alternative designs requested by the client. In many cases, only one is necessary, so just delete Design B. -->
+
 Note that there are three tables below, which you can navigate by clicking the tabs.
 
 ### Sample table
@@ -73,7 +75,6 @@ bulk$md$sampleTable %>%
 
 Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
 
-
 ```{r mapping_plot, fig.width=10, fig.height=6}
 mappingBinsPlot(bulk$md$mapBins) +
   theme(axis.text.x = element_text(hjust = 1))
@@ -81,7 +82,7 @@ mappingBinsPlot(bulk$md$mapBins) +
 
 ## 3 - Gene filtering by expression
 
-Library size normalization of read counts with hypothesis that most genes are not differentially expressed
+Genes with low or zero expression across most samples are not informative and removing them improves False Discovery Rate control and differential expression model fit. Here are the results of filtering genes based on expression. Genes retained for downstream analysis are in green (non-zero expression) or yellow (zero expression), and genes filtered from analysis are in orange (non-zero expression) and red (zero expression). 
 
 ```{r, fig.width=10, fig.height=6}
 bulk_prefilt$dge$counts %>%
@@ -116,7 +117,7 @@ bulk_prefilt$dge$counts %>%
 
 ## 4 - PCA
 
-Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable features. This will give us an estimate of similarity between samples, but will not account for all genes.
+Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable genes. This will give us an estimate of similarity between samples, but will not account for all genes.
 
 ```{r, fig.width=8, fig.height=8}
 ggplotMDS(bulk$dge, group = "grp.day", gene.selection = "common",
