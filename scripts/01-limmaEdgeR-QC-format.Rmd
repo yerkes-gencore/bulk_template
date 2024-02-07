@@ -1,0 +1,124 @@
+---
+title: "`r project_name`: Report `r report_number` - QC"
+author: |
+  | `r report_author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+```
+
+```{=html}
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+details > summary {
+  display: list-item;
+}
+</style>
+```
+
+In this report, ``r report_filename_QC``, we walk through the results of running a quality control analysis on the provided data.
+
+## 1 - Study design overview {.tabset}
+
+Note that there are three tables below, which you can navigate by clicking the tabs.
+
+### Sample table
+
+```{r, message=FALSE, warning=FALSE}
+bulk$md$sampleTable %>%
+  select(SampleID, SubjectID, grp, grp_desc, day, response) %>%
+  knitr::kable() %>% kableExtra::kable_styling()
+```
+
+### Design A
+
+```{r, message=FALSE, warning=FALSE}
+bulk$md$sampleTable %>%
+  select(SampleID, SubjectID, grp, grp_desc, day) %>%
+  group_by(grp, grp_desc, day) %>%
+    summarize(SubjectIDs = paste0(SubjectID, collapse = ", "),
+              n_subjects = n()) %>%
+  knitr::kable() %>% kableExtra::kable_styling()
+```
+
+### Design B
+
+```{r, message=FALSE, warning=FALSE}
+bulk$md$sampleTable %>%
+  filter(grp == "grp2") %>%
+  select(SampleID, SubjectID, grp, grp_desc, day, response) %>%
+  group_by(grp, grp_desc, day, response) %>%
+    summarize(SubjectIDs = paste0(SubjectID, collapse = ", "),
+              n_subjects = n()) %>%
+  knitr::kable() %>% kableExtra::kable_styling()
+```
+
+
+## 2 - Mapping stats
+
+Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
+
+
+```{r mapping_plot, fig.width=10, fig.height=6}
+mappingBinsPlot(bulk$md$mapBins) +
+  theme(axis.text.x = element_text(hjust = 1))
+```
+
+## 3 - Gene filtering by expression
+
+Library size normalization of read counts with hypothesis that most genes are not differentially expressed
+
+```{r, fig.width=10, fig.height=6}
+bulk_prefilt$dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
+            by = c("gene")) %>%
+  pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+  mutate(is_zero = counts == 0) %>%
+  dplyr::group_by(sampleID) %>%
+    dplyr::summarize(keep_zero = sum(is_zero & keep),
+                     keep_nonzero = sum(!is_zero & keep),
+                     remove_zero = sum(is_zero & !keep),
+                     remove_nonzero = sum(!is_zero & !keep)) %>%
+  ungroup() %>%
+  pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), names_to = "cat", values_to = "n_genes") %>%
+  left_join(select(bulk$md$sampleTable, sampleID, grp.day), by = "sampleID") %>%
+  mutate(cat = factor(cat, levels = rev(c("keep_nonzero", "keep_zero", "remove_nonzero", "remove_zero")))) %>%
+  ggplot(aes(x = sampleID, y = n_genes, fill = cat)) +
+  geom_bar(stat="identity") +
+  scale_fill_manual(values = c("keep_nonzero"="green2", "keep_zero"="yellow2",
+                               "remove_nonzero"="orange", "remove_zero"="red"),
+                    breaks = c("keep_nonzero", "keep_zero",
+                               "remove_nonzero", "remove_zero")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+<!-- ## Relative log expression (RLE) normalization -->
+<!-- [TDB] -->
+
+
+## 4 - PCA
+
+Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable features. This will give us an estimate of similarity between samples, but will not account for all genes.
+
+```{r, fig.width=8, fig.height=8}
+ggplotMDS(bulk$dge, group = "grp.day", gene.selection = "common",
+          sampleID = "sampleID", color = "grp", path = "SubjectID")
+```

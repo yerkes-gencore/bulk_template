@@ -1,0 +1,1 @@
+This is where reports are written when `rmarkdown::render()` is called in one of the analysis runfiles in `scripts/`.
