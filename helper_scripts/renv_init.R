@@ -4,19 +4,15 @@ if (!require('renv')) {
 }
 library(renv)
 
-if (!require('BiocManager')) {
-  install.packages('BiocManager')
-}
-
 ## Link for non-locked CRAN
 ## "https://cran.r-project.org" 
 CRAN_mirror <- "https://packagemanager.posit.co/cran/__linux__/jammy/2023-10-30"
 github_repos <- c('https://github.com/yerkes-gencore/gencoreBulk')
 bioconductor <- TRUE ## you can also set this to a specific version
 
-repos <- BiocManager::repositories()
-repos["CRAN"] <- CRAN_mirror
-options(repos=repos)
+# repos <- BiocManager::repositories()
+# repos["CRAN"] <- CRAN_mirror
+# options(repos=repos)
 
 init_settings <- list(
   snapshot.type = 'implicit', ## explicit = Use the description file to initialize the project
