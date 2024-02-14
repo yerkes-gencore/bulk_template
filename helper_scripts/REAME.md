@@ -8,3 +8,7 @@ can fill in with metadata.
 
 Example script of how to use dynamic chunk rendering for lenghty RMD reports.
 You can call the script in a function like `knitr::knit_expand()`.
+
+# renv_init.R
+
+Set up renv for the project
