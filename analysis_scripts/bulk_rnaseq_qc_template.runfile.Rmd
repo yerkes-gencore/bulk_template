@@ -157,12 +157,7 @@ if (!is.null(unlist(analysis$qc_config$dropSamples))){
                 paste0(analysis$qc_config$dropSamples, sep=", ", collapse = ''),
                 "\nbeing removed from downstream analysis per user specification.") 
     cat(out)
-} else {
-  analysis$dds <- analysis$dds
-}
-
-## I don't think this gets used anymore, but could be a good way to order figs
-# sample_order <- droplevels(sample_order)
+} 
 ```
 
 # VST and RLD
