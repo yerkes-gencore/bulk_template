@@ -57,7 +57,7 @@ report_author <- "Micah Fletcher"
 # 1 - Read in bulk object rds
 
 ```{r}
-bulk <- read_rds(here("rds/report-01-QC/bulk-20240207.rds"))
+bulk <- read_rds(here("saved_rds_objects/report-01-QC/bulk-20240207.rds"))
 ```
 
 
@@ -379,12 +379,12 @@ gseaResults_compact %>%
 
 ## Write `bulk` rds
 ```{r}
-if (!dir.exists(here("rds/", subdir))) {
-  dir.create(here("rds/", subdir))
+if (!dir.exists(here("saved_rds_objects/", subdir))) {
+  dir.create(here("saved_rds_objects/", subdir))
 }
 
 bulk %>%
-  write_rds(., here("rds/", subdir, paste0("bulk-", getDate(), ".rds")))
+  write_rds(., here("saved_rds_objects/", subdir, paste0("bulk-", getDate(), ".rds")))
 ```
 
 

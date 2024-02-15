@@ -54,18 +54,9 @@ analysis$qc_config <- yaml.load_file(here("config/QC_config.yml"))
 # Load samplesheet
 
 ```{r sample_metadata_setup}
-## Build your own
-# analysis$sampleTable <- data.frame(matrix("", 0, 3,
-#                                           dimnames=list(c(), c("FileID",
-#                                                                "SampleID",
-#                                                                "Group"))),
-#                                    stringsAsFactors=TRUE)
-                                   
-## Use the package function to intialize a minimal one from the dirs specified in the config
-# analysis$sampleTable <- generateSampleTable(analysis$qc_config)
-
-## Or load from file 
-analysis$sampleTable <- read.table(here("config/exp_design_template.txt"),
+## See the helper_script generate_experimental_design_sheet.R to help generate a table,
+## or modify the template in the config folder and save it as 'exp_design'
+analysis$sampleTable <- read.table(here("config/exp_design.txt"),
                                    header=T, 
                                    stringsAsFactors = TRUE)
 
@@ -166,12 +157,7 @@ if (!is.null(unlist(analysis$qc_config$dropSamples))){
                 paste0(analysis$qc_config$dropSamples, sep=", ", collapse = ''),
                 "\nbeing removed from downstream analysis per user specification.") 
     cat(out)
-} else {
-  analysis$dds <- analysis$dds
-}
-
-## I don't think this gets used anymore, but could be a good way to order figs
-# sample_order <- droplevels(sample_order)
+} 
 ```
 
 # VST and RLD
@@ -193,7 +179,7 @@ Library size normalization of read counts with hypothesis that most genes are
 not differentially expressed
 
 ```{r rle, fig.width = 6, fig.height=5}
-rle_plots <- checkRLE(analysis)
+rle_plots <- checkRLE(analysis$dds)
 analysis$plots$RLE_raw <- rle_plots$RLE_raw
 analysis$plots$RLE_norm <- rle_plots$RLE_norm
 ```

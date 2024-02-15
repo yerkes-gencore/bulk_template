@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 This is where reports are written when `rmarkdown::render()` is called in one of the analysis runfiles in `scripts/`.
+=======
+Store reports, but probably don't upload them to Github for size restrictions
+>>>>>>> main

@@ -1,0 +1,99 @@
+---
+title: "model_validation"
+author: "ENPRC Gencore"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE, 
+                      echo=FALSE,
+                      fig.width = 6,
+                      fig.height = 4,
+                      dev='png')
+```
+
+# Review metadata {.tabset}
+
+## All metadata
+
+```{r}
+metadata %>%
+  select(-c(FileID, SampleID, grp.day, readPath)) %>%
+  DT::datatable(
+    colnames = c('Subjet', 'Group', 'Group (expanded)', 'Timepoint', 'Response', 'SampleID'),
+    rownames = FALSE,
+    filter = 'top')
+  # select(sampleID, SubjectID, grp)
+```
+
+## Summarize counts
+
+```{r}
+metadata_summary
+```
+
+# Samples by individual + group
+
+```{r}
+table(metadata$SubjectID, metadata$grp)
+```
+
+## Samples by subject + day
+
+```{r}
+table(metadata$SubjectID, metadata$day)
+```
+
+## Response by group
+
+```{r}
+table(metadata$response, metadata$grp)
+```
+
+## Response by subjectID
+
+```{r}
+table(metadata$response, metadata$SubjectID)
+```
+# First model selection
+
+Formula:
+
+```{r}
+design_formula
+```
+
+Columns in design matrix:
+
+```{r}
+colnames(design_matrix)
+```
+
+Contrast matrix:
+
+```{r}
+contrast_matrix
+```
+```{r}
+resTable_AllOneTbl %>% 
+  group_by(contrast) %>%
+  slice_min(pvalue, n = 10) 
+```
+
+# Validation plots
+
+```{r}
+plots[['JUN']]
+```
+
+```{r}
+plots['DACT1']
+```
+
+Maybe these per-day comparisons should not include the baseline change
+

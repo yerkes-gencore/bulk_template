@@ -27,3 +27,13 @@ heatmapFromGenelist(geneList = getTopNGenes(DESeq_results${{i}}),
 ```
 
 ***
+
+```{text, eval = FALSE}
+## call the script with knitr::knit_expand in a formatfile to dynamically render chunks
+out <- NULL
+for (celltype in celltypes) {
+    out = c(out, knitr::knit_expand(text = chunk_text, celltype = celltype))
+}
+
+cat(knit_child(text = out, quiet = TRUE), sep = '\n')
+```

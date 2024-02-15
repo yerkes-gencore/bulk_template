@@ -139,10 +139,10 @@ rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
 
 Save and send to Greg and Derrik for review of how to set up design and contrasts
 ```{r}
-if (!dir.exists(here("rds/report-01/"))) {
-  dir.create(here("rds/report-01/"))
+if (!dir.exists(here("saved_rds_objects/report-01/"))) {
+  dir.create(here("saved_rds_objects/report-01/"))
 }
-write_rds(bulk, here("rds/report-01", "bulk-p23224_Matthew-no_design_yet.rds"))
+write_rds(bulk, here("saved_rds_objects/report-01", "bulk-p23224_Matthew-no_design_yet.rds"))
 ```
 
 
@@ -294,14 +294,14 @@ bulk$dge$counts %>%
 
 ## Write `bulk` rds
 ```{r}
-if (!dir.exists(here("rds/", subdir))) {
-  dir.create(here("rds/", subdir))
+if (!dir.exists(here("saved_rds_objects/", subdir))) {
+  dir.create(here("saved_rds_objects/", subdir))
 }
 
 bulk_prefilt %>%
-  write_rds(., here("rds/", subdir, paste0("bulk_prefilt-", getDate(), ".rds")))
+  write_rds(., here("saved_rds_objects/", subdir, paste0("bulk_prefilt-", getDate(), ".rds")))
 bulk %>%
-  write_rds(., here("rds/", subdir, paste0("bulk-", getDate(), ".rds")))
+  write_rds(., here("saved_rds_objects/", subdir, paste0("bulk-", getDate(), ".rds")))
 ```
 
 # 5 - Render report
