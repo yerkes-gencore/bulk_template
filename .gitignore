@@ -1,6 +1,6 @@
 ## Template-related stuff that's likely too big to git track
 outputs/*
-reports/*.html
+reports/*
 rds/*
 !README*
 
