@@ -263,7 +263,7 @@ Multidimensional scaling plot; distances correspond to BCV between pairs of samp
 > Biological coefficient of variation is the coefficient of variation with which the (unknown) true abundance of the gene varies between replicate RNA samples. It represents the CV that would remain between biological replicates if sequencing depth could be increased indefinitely. 
 
 ```{r, fig.width=8, fig.height=8}
-ggplotMDS(bulk$dge, group = "grp.day", gene.selection = "pairwise",
+ggplotMDS(bulk$dge, gene.selection = "pairwise",
           sampleID = "sampleID", color = "grp", path = "SubjectID")
 ```
 
