@@ -3,6 +3,37 @@
 
 ## QC
 
+plotFilterByExpr <- function(dge, keep.exprs) {
+  dge$counts %>%
+    as_tibble(rownames = "gene") %>%
+    left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
+              by = c("gene")) %>%
+    pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+    mutate(sampleID = fct(sampleID, levels = levels(dge$samples$sampleID))) %>%
+    mutate(is_zero = counts == 0) %>%
+    dplyr::group_by(sampleID) %>%
+    dplyr::summarize(keep_zero = sum(is_zero & keep),
+                     keep_nonzero = sum(!is_zero & keep),
+                     remove_zero = sum(is_zero & !keep),
+                     remove_nonzero = sum(!is_zero & !keep)) %>%
+    ungroup() %>%
+    pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), names_to = "cat", values_to = "n_genes") %>%
+    mutate(cat = factor(cat, levels = rev(c("keep_nonzero", "keep_zero", "remove_nonzero", "remove_zero")))) %>%
+    ggplot(aes(y = fct_rev(sampleID), x = n_genes, fill = cat)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(name = "Filtering",
+                      values = c("keep_nonzero"="green2", "keep_zero"="yellow2",
+                                 "remove_nonzero"="orange", "remove_zero"="red"),
+                      breaks = c("keep_nonzero", "keep_zero",
+                                 "remove_nonzero", "remove_zero"),
+                      labels = c("Kept non-zero", "Kept zero",
+                                 "Removed non-zero", "Removed zero")) +
+    xlab("Gene counts") + ylab("Sample ID") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+}
+
+
 getVoomByGroupData <- function(bulk, group, ...) {
   vbg <- voomByGroup(counts = bulk$dge$counts, 
                      design = bulk$md$design, 
