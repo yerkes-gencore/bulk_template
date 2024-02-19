@@ -230,10 +230,10 @@ plot_heatmap_from_resTable <- function(
       dplyr::select({{ sampleID }}, {{ groupID }}) %>%
       mutate(color = "black")
   }
-  # for label colors
-  design_md_colors_tmp <- design_md_colors %>% 
-    mutate({{ groupID }} := as.character(.data[[groupID]]),
-           {{ sampleID }} := as.character(.data[[sampleID]]))
+  # # for label colors
+  # design_md_colors_tmp <- design_md_colors %>% 
+  #   mutate({{ groupID }} := as.character(.data[[groupID]]),
+  #          {{ sampleID }} := as.character(.data[[sampleID]]))
   
   if (is.null(bulk$dge$lcpm)) {
     bulk$dge$lcpm <- cpm(bulk$dge, log = TRUE)
