@@ -87,7 +87,7 @@ In the sections below, we focus on the results for the following differential ex
 
 ## 3.1 - Mean-difference ("MD") plot
 
-```{r, fig.width = 8, fig.height = 6}
+```{r, fig.width = 10, fig.height = 6}
 md_data <- resultsTable %>%
     mutate(signif_dir = ifelse(padj >= 0.05, "NotSig",
                            ifelse(log2FoldChange < 0, "Down", "Up")) %>%
@@ -110,7 +110,7 @@ ggplot() +
 
 ## 3.2 - P-value distributions
 
-```{r, fig.width = 8, fig.height = 6}
+```{r, fig.width = 10, fig.height = 6}
 resultsTable %>%
       mutate(`pBH < 0.05` = ifelse(padj < 0.05, "TRUE", "FALSE") %>%
                factor(., levels = c("TRUE", "FALSE"))) %>%

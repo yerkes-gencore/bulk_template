@@ -21,10 +21,11 @@ knitr::opts_chunk$set(warning = TRUE,
 library(tidyverse)
 library(limma)
 library(edgeR)
+remotes::install_github("yerkes-gencore/gencoreBulk#19")
 library(gencoreBulk)
 library(here)
-source(here("R/voomByGroup.R"))
-source(here("R/limmaEdgeR_functions.R")) # will move these to gencoreBulk package
+
+source(here("R/limmaEdgeR_functions.R"))
 ```
 
 
@@ -222,8 +223,8 @@ bulk$dge <- bulk$dge[keep.exprs, , keep.lib.sizes=FALSE]
 ## 3.1 - Mean-variance trend by group (i.e. voomByGroup)
 
 ```{r}
-vbg_plot <- getVoomByGroupData(bulk, group = "SubjectID") %>%
-    plotVoomByGroupData()
+vbg_plot <- getVoomByGroup(bulk, group = "SubjectID") %>%
+    plotVoomByGroup()
 ```
 
 ## 3.2 - PCA plot

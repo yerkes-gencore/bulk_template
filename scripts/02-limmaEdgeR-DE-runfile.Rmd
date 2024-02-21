@@ -21,11 +21,11 @@ knitr::opts_chunk$set(warning = TRUE,
 library(tidyverse)
 library(limma)
 library(edgeR)
+remotes::install_github("yerkes-gencore/gencoreBulk#19")
 library(gencoreBulk)
 library(here)
 library(msigdbr)
 library(fgsea)
-source(here("R/voomByGroup.R"))
 source(here("R/limmaEdgeR_functions.R")) # will move these to gencoreBulk package
 ```
 
@@ -108,17 +108,17 @@ contr.matrix <- makeContrasts(
 ## 3.1 - Run `voomLmFit()` or `glmQLFit()`
 
 ```{r}
-bulk <- runEdgeRVoomLmFit(bulk, 
-                          contr.matrix=contr.matrix, 
-                          sample.weights = TRUE, 
-                          block = bulk$dge$samples$SubjectID)
+bulk <- fitVoomLm(bulk, 
+                  contr.matrix=contr.matrix, 
+                  sample.weights = TRUE, 
+                  block = bulk$dge$samples$SubjectID)
 ```
 
 
 ## 3.2 - Generate results tables
 
 ```{r}
-resultsTable <- createResTable(bulk, contr.matrix)
+resultsTable <- createResTable(bulk$fit, contr.matrix)
 ```
 
 There are two easy ways to access tables split by contrast for different purposes using `for()` or `split()`

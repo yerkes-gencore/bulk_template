@@ -84,8 +84,8 @@ mappingBinsPlot(bulk$md$mapBins) +
 
 Genes with low or zero expression across most samples are not informative and removing them improves False Discovery Rate control and differential expression model fit. Here are the results of filtering genes based on expression. Genes retained for downstream analysis are in green (non-zero expression) or yellow (zero expression), and genes filtered from analysis are in orange (non-zero expression) and red (zero expression). 
 
-```{r, fig.width=10, fig.height=6}
-plotFilterByExpr(bulk$dge, keep.exprs)
+```{r, fig.width=10, fig.height=10}
+plotFilterByExpr(bulk_prefilt$dge, keep.exprs)
 ```
 
 

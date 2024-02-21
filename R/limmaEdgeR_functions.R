@@ -3,148 +3,148 @@
 
 ## QC
 
-plotFilterByExpr <- function(dge, keep.exprs) {
-  dge$counts %>%
-    as_tibble(rownames = "gene") %>%
-    left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
-              by = c("gene")) %>%
-    pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
-    mutate(sampleID = fct(sampleID, levels = levels(dge$samples$sampleID))) %>%
-    mutate(is_zero = counts == 0) %>%
-    dplyr::group_by(sampleID) %>%
-    dplyr::summarize(keep_zero = sum(is_zero & keep),
-                     keep_nonzero = sum(!is_zero & keep),
-                     remove_zero = sum(is_zero & !keep),
-                     remove_nonzero = sum(!is_zero & !keep)) %>%
-    ungroup() %>%
-    pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), names_to = "cat", values_to = "n_genes") %>%
-    mutate(cat = factor(cat, levels = rev(c("keep_nonzero", "keep_zero", "remove_nonzero", "remove_zero")))) %>%
-    ggplot(aes(y = fct_rev(sampleID), x = n_genes, fill = cat)) +
-    geom_bar(stat="identity") +
-    scale_fill_manual(name = "Filtering",
-                      values = c("keep_nonzero"="green2", "keep_zero"="yellow2",
-                                 "remove_nonzero"="orange", "remove_zero"="red"),
-                      breaks = c("keep_nonzero", "keep_zero",
-                                 "remove_nonzero", "remove_zero"),
-                      labels = c("Kept non-zero", "Kept zero",
-                                 "Removed non-zero", "Removed zero")) +
-    xlab("Gene counts") + ylab("Sample ID") +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-}
-
-
-getVoomByGroupData <- function(bulk, group, ...) {
-  vbg <- voomByGroup(counts = bulk$dge$counts, 
-                     design = bulk$md$design, 
-                     group = bulk$dge$samples[[group]], 
-                     plot = "combine", save.plot = TRUE)
-  
-  vbg_plot_data <- 
-    lapply(names(vbg$voom.line), function(grp) {
-      as_tibble(vbg$voom.line[[grp]]) %>%
-        mutate(group = grp) %>%
-        distinct()
-    }) %>% bind_rows()
-  
-  return(vbg_plot_data)
-}
-
-plotVoomByGroupData <- function(vbg_data, ...) {
-  vbg_data %>%
-    ggplot(data = ., aes(x = x, y = y, color = group)) +
-    geom_line() +
-    scale_color_brewer(palette = "Paired") +
-    xlab("log2( count size + 0.5 )") +
-    ylab("Sqrt( standard deviation )") +
-    theme_classic()
-}
-
-ggplotMDS <- function(dge, group = "group", sampleID = "sampleID", 
-                      gene.selection = "common", 
-                      color, path, ...) {
-  # Get mds data from edgeR::plotMDS()
-  mds_data <- plotMDS(dge, top = 500,
-                      labels = dge$samples[[group]], 
-                      col = col.group, plot = FALSE, 
-                      gene.selection = gene.selection, ...)
-  
-  mds_xy <- mds_data[c("x","y")] %>% as_tibble()
-  mds_xy[[sampleID]] <- colnames(dge)
-  # mds_xy[[sampleID]] <- str_extract(colnames(dge), "(^[A-Za-z0-9]*)")
-  mds_xy <- mds_xy %>% full_join(dge$samples, by = sampleID)
-  
-  x_varex <- round(mds_data$var.explained[1]*100, digits = 0)
-  y_varex <- round(mds_data$var.explained[2]*100, digits = 0)
-  
-  mds_xy %>%
-    ggplot(aes(x = .data$x, y = .data$y, 
-               color = .data[[color]], 
-               label = .data[[sampleID]])) +
-    geom_text() + 
-    geom_path(aes(linetype = .data[[path]])) +
-    xlab(paste0(mds_data$axislabel, " 1 (", x_varex, "%)")) +
-    ylab(paste0(mds_data$axislabel, " 2 (", y_varex, "%)")) +
-    theme_classic() +
-    theme(aspect.ratio = 1) +
-    coord_cartesian(clip = "off") +
-    ggtitle(ifelse(gene.selection == "common", "PCA", "MDS"))
-}
+# plotFilterByExpr <- function(dge, keep.exprs) {
+#   dge$counts %>%
+#     as_tibble(rownames = "gene") %>%
+#     left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
+#               by = c("gene")) %>%
+#     pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+#     mutate(sampleID = fct(sampleID, levels = levels(dge$samples$sampleID))) %>%
+#     mutate(is_zero = counts == 0) %>%
+#     dplyr::group_by(sampleID) %>%
+#     dplyr::summarize(keep_zero = sum(is_zero & keep),
+#                      keep_nonzero = sum(!is_zero & keep),
+#                      remove_zero = sum(is_zero & !keep),
+#                      remove_nonzero = sum(!is_zero & !keep)) %>%
+#     ungroup() %>%
+#     pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), names_to = "cat", values_to = "n_genes") %>%
+#     mutate(cat = factor(cat, levels = rev(c("keep_nonzero", "keep_zero", "remove_nonzero", "remove_zero")))) %>%
+#     ggplot(aes(y = fct_rev(sampleID), x = n_genes, fill = cat)) +
+#     geom_bar(stat="identity") +
+#     scale_fill_manual(name = "Filtering",
+#                       values = c("keep_nonzero"="green2", "keep_zero"="yellow2",
+#                                  "remove_nonzero"="orange", "remove_zero"="red"),
+#                       breaks = c("keep_nonzero", "keep_zero",
+#                                  "remove_nonzero", "remove_zero"),
+#                       labels = c("Kept non-zero", "Kept zero",
+#                                  "Removed non-zero", "Removed zero")) +
+#     xlab("Gene counts") + ylab("Sample ID") +
+#     theme_bw() +
+#     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+# }
+# 
+# 
+# getVoomByGroupData <- function(bulk, group, ...) {
+#   vbg <- voomByGroup(counts = bulk$dge$counts, 
+#                      design = bulk$md$design, 
+#                      group = bulk$dge$samples[[group]], 
+#                      plot = "combine", save.plot = TRUE)
+#   
+#   vbg_plot_data <- 
+#     lapply(names(vbg$voom.line), function(grp) {
+#       as_tibble(vbg$voom.line[[grp]]) %>%
+#         mutate(group = grp) %>%
+#         distinct()
+#     }) %>% bind_rows()
+#   
+#   return(vbg_plot_data)
+# }
+# 
+# plotVoomByGroupData <- function(vbg_data, ...) {
+#   vbg_data %>%
+#     ggplot(data = ., aes(x = x, y = y, color = group)) +
+#     geom_line() +
+#     scale_color_brewer(palette = "Paired") +
+#     xlab("log2( count size + 0.5 )") +
+#     ylab("Sqrt( standard deviation )") +
+#     theme_classic()
+# }
+# 
+# ggplotMDS <- function(dge, group = "group", sampleID = "sampleID", 
+#                       gene.selection = "common", 
+#                       color, path, ...) {
+#   # Get mds data from edgeR::plotMDS()
+#   mds_data <- plotMDS(dge, top = 500,
+#                       labels = dge$samples[[group]], 
+#                       col = col.group, plot = FALSE, 
+#                       gene.selection = gene.selection, ...)
+#   
+#   mds_xy <- mds_data[c("x","y")] %>% as_tibble()
+#   mds_xy[[sampleID]] <- colnames(dge)
+#   # mds_xy[[sampleID]] <- str_extract(colnames(dge), "(^[A-Za-z0-9]*)")
+#   mds_xy <- mds_xy %>% full_join(dge$samples, by = sampleID)
+#   
+#   x_varex <- round(mds_data$var.explained[1]*100, digits = 0)
+#   y_varex <- round(mds_data$var.explained[2]*100, digits = 0)
+#   
+#   mds_xy %>%
+#     ggplot(aes(x = .data$x, y = .data$y, 
+#                color = .data[[color]], 
+#                label = .data[[sampleID]])) +
+#     geom_text() + 
+#     geom_path(aes(linetype = .data[[path]])) +
+#     xlab(paste0(mds_data$axislabel, " 1 (", x_varex, "%)")) +
+#     ylab(paste0(mds_data$axislabel, " 2 (", y_varex, "%)")) +
+#     theme_classic() +
+#     theme(aspect.ratio = 1) +
+#     coord_cartesian(clip = "off") +
+#     ggtitle(ifelse(gene.selection == "common", "PCA", "MDS"))
+# }
 
 ## DE
 
-runEdgeRVoomLmFit <- function(bulkObj, contr.matrix, block = NULL, sample.weights = TRUE, var.design = NULL, var.group = NULL, plotVoom = TRUE) {
-  ## This function adapts the limma voom method (Law et al, 2014) to allow for loss of residual degrees of freedom due to exact zero counts (Lun and Smyth, 2017). 
-  ## The function is analogous to calling voom followed by duplicateCorrelation and lmFit except for the modified residual df values and residual standard deviation sigma values.
-  ## If block is specified, then the intra-block correlation is estimated using duplicateCorrelation. In that case, the voom weights and the intra-block correlation are each estimated twice to achieve effective convergence.
-  ## Empirical sample quality weights will be estimated if sample.weights=TRUE or if var.design or var.group are non-NULL (Liu et al 2015). In that case, voomLmFit is analogous to running voomWithQualityWeights followed by lmFit.
-  bulkObj$fit <- edgeR::voomLmFit(counts = bulkObj$dge$counts, 
-                                  design = bulkObj$md$design,
-                                  block = block,
-                                  sample.weights = sample.weights,
-                                  var.design = var.design,
-                                  var.group = var.group,
-                                  plot = plotVoom)
-  ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
-  bulkObj$fit <- contrasts.fit(bulkObj$fit, 
-                               contrasts = contr.matrix)
-  ## Run empirical Bayes moderation; borrowing information across all the genes to obtain more precise estimates of gene-wise variability
-  bulkObj$fit <- eBayes(bulkObj$fit, robust=TRUE)
-  ## Plot the model's residual variances against average expression values; demonstrating that the variance is no longer dependednt on the mean expression level
-  plotSA(bulkObj$fit, main="Final model: Mean-variance trend")
-  ## Identify which genes are significantly differentially expressed for each contrast from a fit object containing p-values and test statistics
-  bulkObj$de <- decideTests(bulkObj$fit, lfc = 0)
-  return(bulkObj)
-}
-
-runGlmQLFit <- function(bulkObj, contr.matrix) {
-  bulkObj$dge <- estimateDisp(bulkObj$dge, bulkObj$md$design)
-  plotBCV(bulkObj$dge)
-  bulkObj$fit <- glmQLFit(bulkObj$dge, bulkObj$md$design, robust = TRUE)
-  bulkObj$res <- list()
-  for (i in 1:ncol(contr.matrix)){
-    bulkObj$res[[i]]<- glmQLFTest(bulkObj$fit, contrast = contr.matrix[,i])
-  }
-  names(bulkObj$res) <- colnames(contr.matrix)
-  return(bulkObj)
-}
-
-createResTable <- function(clustObj, contr.matrix) {
-  resultsTables_list <- list()
-  for (contrast in colnames(clustObj$fit$coefficients)) {
-    resultsTables_list[[contrast]] <- topTable(clustObj$fit, coef = contrast, n = Inf) %>%
-      # as_tibble(rownames = "gene") %>%
-      dplyr::rename(log2FoldChange = logFC, pvalue = P.Value, padj = adj.P.Val)
-  }
-  
-  resultsTable <- lapply(resultsTables_list, function(one_tbl) {
-    one_tbl %>% rownames_to_column(var = "gene")
-  }) %>% bind_rows(., .id = "contrast") %>%
-    as_tibble() %>%
-    mutate(contrast = fct(contrast, levels = colnames(contr.matrix)))
-  
-  return(resultsTable)
-}
+# runEdgeRVoomLmFit <- function(bulkObj, contr.matrix, block = NULL, sample.weights = TRUE, var.design = NULL, var.group = NULL, plotVoom = TRUE) {
+#   ## This function adapts the limma voom method (Law et al, 2014) to allow for loss of residual degrees of freedom due to exact zero counts (Lun and Smyth, 2017). 
+#   ## The function is analogous to calling voom followed by duplicateCorrelation and lmFit except for the modified residual df values and residual standard deviation sigma values.
+#   ## If block is specified, then the intra-block correlation is estimated using duplicateCorrelation. In that case, the voom weights and the intra-block correlation are each estimated twice to achieve effective convergence.
+#   ## Empirical sample quality weights will be estimated if sample.weights=TRUE or if var.design or var.group are non-NULL (Liu et al 2015). In that case, voomLmFit is analogous to running voomWithQualityWeights followed by lmFit.
+#   bulkObj$fit <- edgeR::voomLmFit(counts = bulkObj$dge$counts, 
+#                                   design = bulkObj$md$design,
+#                                   block = block,
+#                                   sample.weights = sample.weights,
+#                                   var.design = var.design,
+#                                   var.group = var.group,
+#                                   plot = plotVoom)
+#   ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
+#   bulkObj$fit <- contrasts.fit(bulkObj$fit, 
+#                                contrasts = contr.matrix)
+#   ## Run empirical Bayes moderation; borrowing information across all the genes to obtain more precise estimates of gene-wise variability
+#   bulkObj$fit <- eBayes(bulkObj$fit, robust=TRUE)
+#   ## Plot the model's residual variances against average expression values; demonstrating that the variance is no longer dependednt on the mean expression level
+#   plotSA(bulkObj$fit, main="Final model: Mean-variance trend")
+#   ## Identify which genes are significantly differentially expressed for each contrast from a fit object containing p-values and test statistics
+#   bulkObj$de <- decideTests(bulkObj$fit, lfc = 0)
+#   return(bulkObj)
+# }
+# 
+# runGlmQLFit <- function(bulkObj, contr.matrix) {
+#   bulkObj$dge <- estimateDisp(bulkObj$dge, bulkObj$md$design)
+#   plotBCV(bulkObj$dge)
+#   bulkObj$fit <- glmQLFit(bulkObj$dge, bulkObj$md$design, robust = TRUE)
+#   bulkObj$res <- list()
+#   for (i in 1:ncol(contr.matrix)){
+#     bulkObj$res[[i]]<- glmQLFTest(bulkObj$fit, contrast = contr.matrix[,i])
+#   }
+#   names(bulkObj$res) <- colnames(contr.matrix)
+#   return(bulkObj)
+# }
+# 
+# createResTable <- function(clustObj, contr.matrix) {
+#   resultsTables_list <- list()
+#   for (contrast in colnames(clustObj$fit$coefficients)) {
+#     resultsTables_list[[contrast]] <- topTable(clustObj$fit, coef = contrast, n = Inf) %>%
+#       # as_tibble(rownames = "gene") %>%
+#       dplyr::rename(log2FoldChange = logFC, pvalue = P.Value, padj = adj.P.Val)
+#   }
+#   
+#   resultsTable <- lapply(resultsTables_list, function(one_tbl) {
+#     one_tbl %>% rownames_to_column(var = "gene")
+#   }) %>% bind_rows(., .id = "contrast") %>%
+#     as_tibble() %>%
+#     mutate(contrast = fct(contrast, levels = colnames(contr.matrix)))
+#   
+#   return(resultsTable)
+# }
 
 ## Check sample sizes per contrast (probably not necessary for bulk studies)
 
@@ -270,17 +270,17 @@ plot_heatmap_from_resTable <- function(
     bulk$dge$lcpm <- cpm(bulk$dge, log = TRUE)
   }
   
-  gex_data <- bulk$dge$lcpm[, design_md_colors_tmp[[sampleID]]] 
+  gex_data <- bulk$dge$lcpm[, design_md_colors[[sampleID]]] 
   gex_data[hm_tbl$gene,]
   
   hm_tbl$gene %>%
     plotHeatmapFromGenelist(geneList = .,
                             data = gex_data,
                             cluster_rows = TRUE,
-                            slice_labels = unique(design_md_colors_tmp[[groupID]]),
-                            slice_labels_col = unique(design_md_colors_tmp$color),
-                            column_split = design_md_colors_tmp[[groupID]],
-                            column_names_gp_col = design_md_colors_tmp$color,
+                            slice_labels = unique(design_md_colors[[groupID]]),
+                            slice_labels_col = unique(design_md_colors$color),
+                            column_split = design_md_colors[[groupID]],
+                            column_names_gp_col = design_md_colors$color,
                             row_names_gp_col = hm_tbl$row_name_color
     )
 }
