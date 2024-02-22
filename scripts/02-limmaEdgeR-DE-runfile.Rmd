@@ -57,7 +57,7 @@ report_author <- "Micah Fletcher"
 # 1 - Read in bulk object rds
 
 ```{r}
-bulk <- read_rds(here("rds/report-01-QC/bulk-20240207.rds"))
+bulk <- read_rds(here("rds/report-01-QC/bulk-20240222.rds"))
 ```
 
 
@@ -118,7 +118,7 @@ bulk <- fitVoomLm(bulk,
 ## 3.2 - Generate results tables
 
 ```{r}
-resultsTable <- createResTable(bulk$fit, contr.matrix)
+resultsTable <- createResTable(bulk$contrasts, contr.matrix)
 ```
 
 There are two easy ways to access tables split by contrast for different purposes using `for()` or `split()`
@@ -208,7 +208,6 @@ n_deg_summary %>%
   theme_bw() +
   ylab("contrast")
 ```
-
 
 ## 4.2 - Export results list to excel file
 
