@@ -5,6 +5,7 @@ output:
   rmdformats::robobook:
     fig_width: 9
     toc_depth: 3
+    css: "stylesheets/robobook.css"
 title: "`r params$title`"
 author: "EPRC Gencore"
 date:  "`r Sys.Date()`"
@@ -13,14 +14,6 @@ date:  "`r Sys.Date()`"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo=FALSE, fig.width = 6, fig.height = 4, dev='png')
 ```
-
-<style type="text/css">
-.book .book-body .page-inner {
-  max-width: 1600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-</style>
 
 ## Study overview
 
