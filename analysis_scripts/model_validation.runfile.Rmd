@@ -21,6 +21,7 @@ library(here)         ## For consistent directory structures
 library(edgeR)
 library(DT)
 library(reshape2)
+library(gencoreBulk)
 ```
 
 # Read metadata
@@ -88,13 +89,15 @@ model_fit <- edgeR::voomLmFit(counts = obj$dge,
 
 # Define contrasts
 
-Explicitly write out full contrast formulas, including terms that will cancel.
+Explicitly write out full contrast formulas, including terms that will cancel and
+expanded interaction terms.
 This avoids mistakes and facilitates plotting.
 
-Remember to use valid names, which may differ from the original names
+You do not have to use valid R names at this stage, as that will be corrected
+for later. Just use the colnames of the design matrix.
 
 ```{r}
-make.names(colnames(design_matrix))
+colnames(design_matrix)
 ```
 
 
@@ -108,24 +111,37 @@ contrast_matrix_expanded <- data.frame(
     'D28_grp3vgrp2'
   ),
   numerators = c(
-    'X.Intercept. + grpgrp3',
-    'X.Intercept. + grpgrp3 + dayD00 + dayD00.grpgrp3',
-    'X.Intercept. + grpgrp3 + dayD03 + dayD03.grpgrp3',
-    'X.Intercept. + grpgrp3 + dayD07 + dayD07.grpgrp3',
-    'X.Intercept. + grpgrp3 + dayD28 + dayD28.grpgrp3'
+    '(Intercept) + grpgrp3',
+    '(Intercept) + grpgrp3 + dayD00 + dayD00:grpgrp3',
+    '(Intercept) + grpgrp3 + dayD03 + dayD03:grpgrp3',
+    '(Intercept) + grpgrp3 + dayD07 + dayD07:grpgrp3',
+    '(Intercept) + grpgrp3 + dayD28 + dayD28:grpgrp3'
   ),
   denominators = c(
-    'X.Intercept.',
-    'X.Intercept. + dayD00',
-    'X.Intercept. + dayD03',
-    'X.Intercept. + dayD07',
-    'X.Intercept. + dayD28'
+    '(Intercept)',
+    '(Intercept) + dayD00',
+    '(Intercept) + dayD03',
+    '(Intercept) + dayD07',
+    '(Intercept) + dayD28'
   )
 )
+contrast_matrix_expanded
 ```
 
 ```{r}
-contrast_matrix <- apply(contrast_matrix_expanded, MARGIN = 1, function(row) {
+## have to make valid names first
+contrast_matrix <- contrast_matrix_expanded
+contrast_matrix$denominators <-
+  sapply(contrast_matrix$denominators, function(x) {
+    paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+  })
+contrast_matrix$numerators <-
+  sapply(contrast_matrix$numerators, function(x) {
+    paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+  })
+
+## Then make contrasts
+contrast_matrix <- apply(contrast_matrix, MARGIN = 1, function(row) {
   paste0('(', row[2], ') - (', row[3], ')')
 })
 contrast_matrix <- limma::makeContrasts(contrasts = contrast_matrix,
@@ -134,7 +150,7 @@ colnames(contrast_matrix) <- contrast_matrix_expanded$contrast_names
 contrast_matrix
 ```
 
-## Extract contrasts
+# Extract contrasts
 
 ```{r}
 ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
@@ -168,323 +184,222 @@ resTable_AllOneTbl <- lapply(resTables, function(one_tbl) {
   }) %>% bind_rows(., .id = "contrast")
 ```
 
+# Results table
+
 ```{r}
 resTable_AllOneTbl
 ```
 
-```{r}
-# checkplot <- function(gene,
-#                       model_fit, 
-#                       extracted_contrasts,
-#                       contrast_matrix_expanded,
-#                       metadata,
-#                         metadata_id_col = 'sampleID',
-#                         metadata_x_col = 'day',
-#                         metadata_group_col = 'grp'
-#                       ) 
-base_expression <- model_fit$EList$E[gene,] %>%
-  stack() 
-base_expression <- merge(base_expression, metadata,
-                         by.x = 'ind', by.y = metadata_id_col)
+# Visualize coefficients
 
-coefs <- limma_fit$fit$coefficients[gene_to_plot,]
-names(coefs) <- make.names(names(coefs))
-contrast_mat <- extracted_contrasts$contrasts
-
-coef_lines <- contrast_matrix_expanded
-coef_lines$numerators <- lapply(coef_lines$numerators, function(x) {
-  x <- x %>% 
-    strsplit(split = '\\s+') %>%
-    unlist()
-  x[x %in% rownames(contrast_mat)] <- coefs[x[x %in% rownames(contrast_mat)]]
-  x <- eval(parse(text=paste(x, collapse = ' ')))
-})
-
-coef_lines$denominators <- lapply(coef_lines$denominators, function(x) {
-  x <- x %>% 
-    strsplit(split = '\\s+') %>%
-    unlist()
-  x[x %in% rownames(contrast_mat)] <- coefs[x[x %in% rownames(contrast_mat)]]
-  x <- eval(parse(text=paste(x, collapse = ' ')))
-})
-
-coef_lines <- list(
-  'P14_grp2' = unname(coef_lines['(Intercept)']),
-  'P14_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['grpgrp3']),
-  'D00_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00']),
-  'D00_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00'] + coef_lines['grpgrp3']+ coef_lines['dayD00:grpgrp3']),
-  'D03_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03']),
-  'D03_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03'] + coef_lines['grpgrp3']+ coef_lines['dayD03:grpgrp3']),
-  'D07_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07']),
-  'D07_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07'] + coef_lines['grpgrp3']+ coef_lines['dayD07:grpgrp3']),
-  'D28_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28']),
-  'D28_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28'] + coef_lines['grpgrp3']+ coef_lines['dayD28:grpgrp3'])
-)
-coef_lines <- stack(coef_lines) %>%
-  separate(ind, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-deg_lines <- resTable_AllOneTbl %>%
-  filter(gene == gene_to_plot) %>%
-  select(contrast, log2FoldChange, padj) %>%
-  # separate(contrast, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(
-    timepoint = sub(x = contrast, '(^D[0-9]+).+', '\\1'),
-    timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')))
-deg_lines <- data.frame(
-  contrast = deg_lines$contrast,
-  x = deg_lines$timepoint,
-  ystart = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'],
-  yend   = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'] + deg_lines$log2FoldChange,
-  alpha = 1 - deg_lines$padj
-)
-# %>% mutate(
-#   x = sub(pattern = '(^.[0-9]+).+', replacement =  '\\1', x = x)
-# )
-
-plots[['JUN']] <- ggplot(data = base_expression, aes(x = timepoint, y = values, group = group_timepoint, color = group, shape = SampleID)) +
-  geom_boxplot(outlier.shape = NA, show.legend = FALSE, position = position_dodge(width=1), width = .25) +
-  geom_point(size = 2, position = position_jitterdodge(dodge.width = 1)) +
-  scale_shape_manual(values = 1:12) + 
-  theme_minimal() +
-  labs(x = 'Timepoint', y = 'Log-fold expression', color = 'Group', alpha = '1 - adj.pval', title = gene_to_plot) +
-  geom_point(data=coef_lines, shape=95, size=10) +
-  geom_segment(data = deg_lines, aes(x = x, xend = x, y = ystart, yend = yend, alpha = alpha), arrow = arrow(), inherit.aes = FALSE) +
-  theme(panel.grid.major.x = element_blank()) +
-  guides(alpha = NULL)
-plots['JUN']
-```
+These are currently being added to gencoreBulk, but are here until pushed to main
 
 ```{r}
-gene_to_plot <- c('DACT1')
-base_expression <- limma_fit$fit$EList$E[gene_to_plot,] %>%
-  stack() %>% 
-  # rownames_to_column('SampleID') %>%
-  separate(ind, into = c('SampleID', 'group', 'timepoint'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-coef_lines <- limma_fit$fit$coefficients[gene_to_plot,]
-coef_lines <- list(
-  'P14_grp2' = unname(coef_lines['(Intercept)']),
-  'P14_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['grpgrp3']),
-  'D00_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00']),
-  'D00_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00'] + coef_lines['grpgrp3']+ coef_lines['dayD00:grpgrp3']),
-  'D03_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03']),
-  'D03_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03'] + coef_lines['grpgrp3']+ coef_lines['dayD03:grpgrp3']),
-  'D07_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07']),
-  'D07_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07'] + coef_lines['grpgrp3']+ coef_lines['dayD07:grpgrp3']),
-  'D28_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28']),
-  'D28_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28'] + coef_lines['grpgrp3']+ coef_lines['dayD28:grpgrp3'])
-)
-coef_lines <- stack(coef_lines) %>%
-  separate(ind, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-deg_lines <- resTable_AllOneTbl %>%
-  filter(gene == gene_to_plot) %>%
-  select(contrast, log2FoldChange, padj) %>%
-  # separate(contrast, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(
-    timepoint = sub(x = contrast, '(^D[0-9]+).+', '\\1'),
-    timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')))
-deg_lines <- data.frame(
-  contrast = deg_lines$contrast,
-  x = deg_lines$timepoint,
-  ystart = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'],
-  yend   = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'] + deg_lines$log2FoldChange,
-  alpha = 1 - deg_lines$padj
-)
-# %>% mutate(
-#   x = sub(pattern = '(^.[0-9]+).+', replacement =  '\\1', x = x)
-# )
-
-plots[['DACT1']] <- ggplot(data = base_expression, aes(x = timepoint, y = values, group = group_timepoint, color = group, shape = SampleID)) +
-  geom_boxplot(outlier.shape = NA, show.legend = FALSE, position = position_dodge(width=1), width = .25) +
-  geom_point(size = 2, position = position_jitterdodge(dodge.width = 1)) +
-  scale_shape_manual(values = 1:12) + 
-  theme_minimal() +
-  labs(x = 'Timepoint', y = 'Log-fold expression', color = 'Group', alpha = '1 - adj.pval', title = gene_to_plot) +
-  geom_point(data=coef_lines, shape=95, size=10) +
-  geom_segment(data = deg_lines, aes(x = x, xend = x, y = ystart, yend = yend, alpha = alpha), arrow = arrow(), inherit.aes = FALSE) +
-  theme(panel.grid.major.x = element_blank()) +
-  guides(alpha = NULL)
-plots['DACT1']
-```
-
-## Different contrast
-
-```{r}
-contrast_matrix_2 <- limma::makeContrasts(
-    'P14_3v2' = 'grpgrp3', ## This is only for plotting
-    'D00_3v2' = 'dayD00.grpgrp3',
-    'D03_3v2' = 'dayD03.grpgrp3',
-    'D07_3v2' = 'dayD07.grpgrp3',
-    'D28_3v2' = 'dayD28.grpgrp3',
-    levels = make.names(colnames(design_matrix)))
-```
-
-# Fit model
-
-```{r}
-limma_fit$cont_fit_2 <- contrasts.fit(limma_fit$fit, contrasts = contrast_matrix_2)
-limma_fit$cont_fit_2 <- eBayes(limma_fit$cont_fit_2, robust = TRUE)
-limma_fit$de2 <- decideTests(limma_fit$cont_fit_2, lfc = 0)
-```
-
-```{r}
-createResTables <- function(clustObj) {
-  resultsTables <- list()
-  for (contrast in colnames(clustObj$cont_fit_2$coefficients)) {
-    resultsTables[[contrast]] <- topTable(clustObj$cont_fit_2, coef = contrast, n = Inf) %>%
-      # as_tibble(rownames = "gene") %>%
-      dplyr::rename(log2FoldChange = logFC, pvalue = P.Value, padj = adj.P.Val)
+#' Return a simple ggplot boxplot of gene expression
+#'
+#' Returns a simple ggplot of gene expression, optionally with jitter or 
+#'  boxplots overlayed. These are optional in case you want to do other 
+#'  aesthetics. This is meant to be minimal so you can adjust the aesthetics
+#'  as necessary, but it can still be used as a quick check. 
+#'  
+#' @param gene Gene to plot expression for
+#' @param counts The expression data to plot
+#' @param metadata The metadata to associate with the counts data
+#' @param grouping Variable to group expression by. Must be a column of `metadata`
+#' @param groups Optional specification of level ordering for grouping var
+#' @param subsetting Optional variable to subset expression by. Must be a column of `metadata`
+#' @param subsets Specification of levels to subset for
+#' @param boxplot Boolean, plot `geom_boxplot`?
+#' @param jitter Boolean, plot `geom_jitter`?
+#' @param axis_text_x Option to modify X axis text. Default rotates labels 90
+#'  degrees
+#'
+#' @returns A ggplot object
+#' @export
+#'
+#' @import ggplot2
+#' @importFrom rlang .data
+#' @importFrom utils stack
+#' @examples
+#' \dontrun{
+#' 
+#'   ## With a limma model fit
+#'   plotGeneExpression('MAMU-A', counts = model_fit$EList$E, metadata = model_fit$targets, grouping = 'groupIDs')
+#'   
+#'   ## With a DESeq model
+#'   plotGeneExpression('MAMU-A', counts = assay(assays(analysis$dds)$rld), 
+#'                      metadata = colData(analysis$dds), grouping = 'groupIDs')
+#' }
+#' 
+plotGeneExpression <- function(gene,
+                               grouping,
+                               groups,
+                               counts,
+                               metadata,
+                               subsetting,
+                               subsets,
+                               boxplot = TRUE,
+                               jitter = TRUE,
+                               axis_text_x = element_text(angle = 90, vjust = 0.5, hjust=1)) {
+  # if (missing(gene) | missing(grouping) | missing(counts) | missing(metadata)) {
+  #   stop('The following arguments are all required: gene, grouping, groups, counts, metadata')
+  # }
+  if (!(gene %in% rownames(counts))){
+    stop('Gene not found in counts data')
   }
-  return(resultsTables)
+  if (!grouping %in% colnames(metadata)) {
+    stop('grouping variable not found in metadata')
+  }
+  if (xor(missing(subsetting), missing(subsets))) {
+    stop('Subsetting data requires both subsets and subsetting to be specified')
+  } 
+  if (any(colnames(counts) != rownames(metadata))) {
+    warning('Colnames of counts does not match rownames of metadata. Continuing, but
+            this may suggest the data are not properly associated')
+  }
+  if (!missing(subsetting)) {
+    if (!subsetting %in% colnames(metadata)) {
+      stop('subsetting variable not found in metadata')
+    }
+    metadata <- metadata[metadata[[subsetting]] %in% subsets,]
+    counts <- counts[,rownames(metadata)]
+  }
+  plotdata <- utils::stack(counts[gene, ])
+  colnames(plotdata) <- 'Gene'
+  plotdata$grouping <- metadata[[grouping]]
+  if (!missing(groups)) {
+    if (!all(groups %in% unique(metadata[[grouping]]))) {
+      stop('All groups not found in grouping variable of metadata')
+    }
+    plotdata$grouping <- factor(plotdata$grouping, levels = groups)
+  }
+  ggplot2::ggplot(plotdata, aes(x=grouping, y=.data[['Gene']])) + 
+    (if (boxplot) { ggplot2::geom_boxplot(outlier.color = if (jitter) {NA} else {'black'}) }) +
+    (if (jitter) { ggplot2::geom_jitter() }) +
+    ggplot2::theme_bw() +
+    ggplot2::labs(x = 'Group', y = 'Expression', main = gene) +
+    ggplot2::theme(axis.text.x = axis_text_x)
 }
 
-# Arrange by cluster, then by contrast
-resTables_2 <- createResTables(limma_fit)
 
-# Put all the results in a single table
-resTable_AllOneTbl_2 <- lapply(resTables_2, function(one_tbl) {
-    one_tbl %>%
-    rownames_to_column(var = "gene")
-  }) %>% bind_rows(., .id = "contrast")
-# }) 
 
-# Can create lists in the hierarchy desired on the fly with (helpful for plotting facetted plots etc.)
-resTable_AllOneTbl_2 %>% split(resTable_AllOneTbl$contrast)
+
+#' Plot the results of a model fit 
+#' 
+#' Plots the expression, coefficients, and estimated change for a single gene and
+#' contrast. 
+#' 
+#' For example, if the question is:
+#'  "the results say JUNB has a significant increase in expression,
+#'   in Day 14 compared to day 0, does this seem to be true?"
+#' 
+#' You might subset the counts data on 'day', selecting only day 14 and 0 to focus the figure.
+#'
+#' @param gene Gene to plot
+#' @param contrast Name of contrast, must be present in `contrasts`
+#' @param coefficients Matrix of coefficients fit by model of your choice
+#' @param contrasts Dataframe of contrasts, with columns for contrast name, 
+#'  numerator, and denominator
+#' @inheritParams plotGeneExpression
+#'
+#' @returns A ggplot object
+#' @export
+#' 
+#' @import ggplot2
+#'
+#' @examples 
+#' \dontrun{ 
+#' 
+#' contrast_matrix_expanded <- data.frame(
+#'   contrast_names = 'P14_grp3vgrp2',
+#'   numerators = '(Intercept) + grpgrp3',
+#'   denominators = '(Intercept)')
+#'   
+#' model_plot('JUN', contrast = 'P14_grp3vgrp2',
+#'              counts = model_fit$EList$E, metadata = model_fit$targets,
+#'              grouping = 'grp.day',
+#'              subsetting = 'grp.day', subsets = c('grp2.P14', 'grp3.P14'),
+#'              coefficients = limma_fit$fit$coefficients,
+#'              contrasts = contrast_matrix_expanded)
+#' }
+model_plot <- function(gene, contrast, 
+                       counts, metadata, 
+                       grouping, groups, 
+                       subsetting, subsets,
+                       coefficients, contrasts) { 
+  baseplot <- plotGeneExpression(gene,
+                                 counts =  counts,
+                                 metadata = metadata,
+                                 grouping = grouping,
+                                 groups = groups,
+                                 subsetting = subsetting,
+                                 subsets = subsets)
+  contrast_coeffs <- contrasts[contrasts$contrast_names == contrast,]
+  contrast_coeffs <- .extract_coefficients(gene = gene, 
+                                          contrast = contrast_coeffs, 
+                                          coefficients = coefficients)
+  contrast_num <- round(contrast_coeffs$numerator, 2)
+  contrast_den <- round(contrast_coeffs$denominator, 2)
+  contrast_line_num <- ggplot2::geom_hline(yintercept = contrast_num, linetype = 'dashed') 
+  contrast_line_den <- ggplot2::geom_hline(yintercept = contrast_den, linetype = 'dashed') 
+  
+  arrow <- ggplot2::geom_segment(aes(x = 1.5, xend = 1.5, 
+                            y = contrast_den, 
+                            yend = contrast_num),
+                        arrow = ggplot2::arrow()) 
+  baseplot + 
+    contrast_line_num +
+    contrast_line_den +
+    arrow +
+    ggplot2::scale_y_continuous(breaks = c(contrast_den, contrast_num))
+}
+
+.extract_coefficients <- function(gene,
+                                  coefficients,
+                                  contrast) {
+  if (!gene %in% rownames(coefficients)) {
+    stop('Gene not found in coefficients')
+  }
+  coefficients <- coefficients[gene,]
+  numerator_terms <- unlist(strsplit(contrast$numerators, '\\s*\\+\\s*', perl = TRUE))
+  numerator <- 0
+  for (term in numerator_terms) {
+    if (!term %in% names(coefficients)) {
+      stop(paste0("Error in numerator specification. Term '", term,
+                  "' not found in matrix of coefficients"))
+    }
+    numerator <- numerator + unname(coefficients[term])
+  }
+  denominator_terms <- unlist(strsplit(contrast$denominators, '\\s*\\+\\s*', perl = TRUE))
+  denominator <- 0
+  for (term in denominator_terms) {
+    if (!term %in% names(coefficients)) {
+      stop(paste0("Error in denominator specification. Term '", term,
+                  "' not found in matrix of coefficients"))
+    }
+    denominator <- denominator + unname(coefficients[term])
+  }
+  return(list(contrast_name = contrast$contrast_names, numerator = numerator, denominator = denominator))
+}
+
 ```
+
+
 ```{r}
-resTable_AllOneTbl_2
+
+plotGeneExpression('JUN',
+                   counts =  model_fit$EList$E,
+                   metadata = model_fit$targets,
+                   grouping = 'grp.day')
 ```
+
+You can try to add coefficient terms too to see if they track with your expectations
 
 ```{r}
-gene_to_plot <- c('JUN')
-base_expression <- limma_fit$fit$EList$E[gene_to_plot,] %>%
-  stack() %>% 
-  # rownames_to_column('SampleID') %>%
-  separate(ind, into = c('SampleID', 'group', 'timepoint'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-coef_lines <- limma_fit$fit$coefficients[gene_to_plot,]
-coef_lines <- list(
-  'P14_grp2' = unname(coef_lines['(Intercept)']),
-  'P14_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['grpgrp3']),
-  'D00_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00']),
-  'D00_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00'] + coef_lines['grpgrp3']+ coef_lines['dayD00:grpgrp3']),
-  'D03_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03']),
-  'D03_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03'] + coef_lines['grpgrp3']+ coef_lines['dayD03:grpgrp3']),
-  'D07_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07']),
-  'D07_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07'] + coef_lines['grpgrp3']+ coef_lines['dayD07:grpgrp3']),
-  'D28_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28']),
-  'D28_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28'] + coef_lines['grpgrp3']+ coef_lines['dayD28:grpgrp3'])
-)
-coef_lines <- stack(coef_lines) %>%
-  separate(ind, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-deg_lines <- resTable_AllOneTbl_2 %>%
-  filter(gene == gene_to_plot) %>%
-  select(contrast, log2FoldChange, padj) %>%
-  # separate(contrast, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(
-    timepoint = sub(x = contrast, '(^.[0-9]+).+', '\\1'),
-    timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')))
-deg_lines <- data.frame(
-  contrast = deg_lines$contrast,
-  x = deg_lines$timepoint,
-  ystart = coef_lines[coef_lines$group == 'grp2', 'values'] +
-    limma_fit$fit$coefficients[gene_to_plot,'grpgrp3'] ,
-  yend   = coef_lines[coef_lines$group == 'grp2', 'values'] +
-    limma_fit$fit$coefficients[gene_to_plot,'grpgrp3'] + deg_lines$log2FoldChange,
-  alpha = 1 - deg_lines$padj
-)
-
-# %>% mutate(
-#   x = sub(pattern = '(^.[0-9]+).+', replacement =  '\\1', x = x)
-# )
-
-plots[['JUN_2']] <- ggplot(data = base_expression, aes(x = timepoint, y = values, group = group_timepoint, color = group, shape = SampleID)) +
-  geom_boxplot(outlier.shape = NA, show.legend = FALSE, position = position_dodge(width=1), width = .25) +
-  geom_point(size = 2, position = position_jitterdodge(dodge.width = 1)) +
-  scale_shape_manual(values = 1:12) + 
-  theme_minimal() +
-  labs(x = 'Timepoint', y = 'Log-fold expression', color = 'Group', alpha = '1 - adj.pval', title = gene_to_plot) +
-  geom_point(data=coef_lines, shape=95, size=10) +
-  geom_segment(data = deg_lines, aes(x = x, xend = x, y = ystart, yend = yend, alpha = alpha), arrow = arrow(), inherit.aes = FALSE) +
-  theme(panel.grid.major.x = element_blank()) +
-  guides(alpha = NULL)
-plots[['JUN_2']]
+model_plot('JUN', contrast = 'P14_grp3vgrp2',
+           counts = model_fit$EList$E, metadata = model_fit$targets,
+           grouping = 'grp.day',
+           subsetting = 'grp.day', subsets = c('grp2.P14', 'grp3.P14'),
+           coefficients = model_fit$coefficients, 
+           contrasts = contrast_matrix_expanded)
 ```
-
-```{r}
-gene_to_plot <- c('DACT1')
-base_expression <- limma_fit$fit$EList$E[gene_to_plot,] %>%
-  stack() %>% 
-  # rownames_to_column('SampleID') %>%
-  separate(ind, into = c('SampleID', 'group', 'timepoint'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-coef_lines <- limma_fit$fit$coefficients[gene_to_plot,]
-coef_lines <- list(
-  'P14_grp2' = unname(coef_lines['(Intercept)']),
-  'P14_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['grpgrp3']),
-  'D00_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00']),
-  'D00_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD00'] + coef_lines['grpgrp3']+ coef_lines['dayD00:grpgrp3']),
-  'D03_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03']),
-  'D03_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD03'] + coef_lines['grpgrp3']+ coef_lines['dayD03:grpgrp3']),
-  'D07_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07']),
-  'D07_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD07'] + coef_lines['grpgrp3']+ coef_lines['dayD07:grpgrp3']),
-  'D28_grp2' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28']),
-  'D28_grp3' = unname(coef_lines['(Intercept)'] + coef_lines['dayD28'] + coef_lines['grpgrp3']+ coef_lines['dayD28:grpgrp3'])
-)
-coef_lines <- stack(coef_lines) %>%
-  separate(ind, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')),
-         group = factor(group, levels = c('grp2', 'grp3')),
-         group_timepoint = paste0(group, '_', timepoint))
-
-deg_lines <- resTable_AllOneTbl %>%
-  filter(gene == gene_to_plot) %>%
-  select(contrast, log2FoldChange, padj) %>%
-  # separate(contrast, into = c('timepoint', 'group'), sep = '_') %>%
-  mutate(
-    timepoint = sub(x = contrast, '(^D[0-9]+).+', '\\1'),
-    timepoint = factor(timepoint, levels = c('P14', 'D00', 'D03', 'D07', 'D28')))
-deg_lines <- data.frame(
-  contrast = deg_lines$contrast,
-  x = deg_lines$timepoint,
-  ystart = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'],
-  yend   = coef_lines[coef_lines$group == 'grp2' & coef_lines$timepoint !='P14', 'values'] + deg_lines$log2FoldChange,
-  alpha = 1 - deg_lines$padj
-)
-# %>% mutate(
-#   x = sub(pattern = '(^.[0-9]+).+', replacement =  '\\1', x = x)
-# )
-
-plots[['DACT1']] <- ggplot(data = base_expression, aes(x = timepoint, y = values, group = group_timepoint, color = group, shape = SampleID)) +
-  geom_boxplot(outlier.shape = NA, show.legend = FALSE, position = position_dodge(width=1), width = .25) +
-  geom_point(size = 2, position = position_jitterdodge(dodge.width = 1)) +
-  scale_shape_manual(values = 1:12) + 
-  theme_minimal() +
-  labs(x = 'Timepoint', y = 'Log-fold expression', color = 'Group', alpha = '1 - adj.pval', title = gene_to_plot) +
-  geom_point(data=coef_lines, shape=95, size=10) +
-  geom_segment(data = deg_lines, aes(x = x, xend = x, y = ystart, yend = yend, alpha = alpha), arrow = arrow(), inherit.aes = FALSE) +
-  theme(panel.grid.major.x = element_blank()) +
-  guides(alpha = NULL)
-plots['DACT1']
-```
-
