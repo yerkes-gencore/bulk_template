@@ -63,7 +63,7 @@ here <- here::here
 </style>
 
 ```{r}
-analysis <- readRDS(here('saved_rds_objects/analysis_post_QC.Rds'))
+analysis <- readRDS(here('rds/analysis_post_QC.Rds'))
 analysis$analysis_config <- yaml.load_file(here("config/analysis_config.yml"))
 #analysis$sampleTable <- data.frame(lapply(analysis$sampleTable, as.factor))
 ```

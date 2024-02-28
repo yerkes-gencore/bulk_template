@@ -1,0 +1,298 @@
+---
+title: "`r project_name`: Report `r report_number` - DE"
+author: |
+  | `r report_author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+    css: "stylesheets/robobook.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+```
+
+In this report, ``r report_filename_DE``, we walk through the differential expression analysis. The report is divided into sections focusing on model design, the definition of contrasts, some model fit quality control, and finally the differential expression results.
+
+A separate excel file, ``r resultsTable_filename``, is also provided with this report with the full results of the model for each contrast queried.
+
+Another excel file, ``r GSEA_filename``, is provided with the full results of the gene set enrichment analysis.
+
+# 1 - Study design review
+
+Note that we are only reviewing the results of design A from report 01.
+
+## Design A
+
+```{r, warning = FALSE, message = FALSE}
+bulk$md$sampleTable %>%
+  select(SampleID, SubjectID, grp, grp_desc, day) %>%
+  group_by(grp, grp_desc, day) %>%
+    summarize(SubjectIDs = paste0(SubjectID, collapse = ", "),
+              n_subjects = n()) %>%
+  knitr::kable() %>% kableExtra::kable_styling()
+```
+
+
+# 2 - Defining contrasts
+
+In the sections below, we focus on the results for the following differential expression contrasts.
+
+**Within-day group effects:**
+
+ - P14_grp3vsgrp2 = grp3.P14 - grp2.P14
+ - D00_grp3vsgrp2 = grp3.D00 - grp2.D00
+ - D03_grp3vsgrp2 = grp3.D03 - grp2.D03
+ - D07_grp3vsgrp2 = grp3.D07 - grp2.D07
+ - D28_grp3vsgrp2 = grp3.D28 - grp2.D28
+
+**Within-group-2 day effects:**
+
+ - grp2_D03vsD00 = grp2.D03 - grp2.D00
+ - grp2_D07vsD00 = grp2.D07 - grp2.D00
+ - grp2_D28vsD00 = grp2.D28 - grp2.D00
+
+**Within-group-3 day effects**
+
+ - grp3_D03vsD00 = grp3.D03 - grp3.D00
+ - grp3_D07vsD00 = grp3.D07 - grp3.D00
+ - grp3_D28vsD00 = grp3.D28 - grp3.D00
+
+**Interaction between difference-from-baseline and group**
+
+ - D03vsD00_grp3vsgrp2 = (grp3.D03 - grp3.D00) - (grp2.D03 - grp2.D00)
+ - D07vsD00_grp3vsgrp2 = (grp3.D07 - grp3.D00) - (grp2.D07 - grp2.D00)
+ - D28vsD00_grp3vsgrp2 = (grp3.D28 - grp3.D00) - (grp2.D28 - grp2.D00)
+
+# 3 - Quality control
+
+## 3.1 - Mean-difference ("MD") plot
+
+```{r, fig.width = 10, fig.height = 6}
+md_data <- resultsTable %>%
+    mutate(signif_dir = ifelse(padj >= 0.05, "NotSig",
+                           ifelse(log2FoldChange < 0, "Down", "Up")) %>%
+             factor(., levels = c("NotSig", "Up", "Down")),
+           signif = padj < 0.05)
+  
+ggplot() +
+  geom_point(data = filter(md_data, !signif),
+             aes(x = AveExpr, y = log2FoldChange), 
+             color = "black", size = 0.1) +
+  geom_point(data = filter(md_data, signif), 
+             aes(x = AveExpr, y = log2FoldChange, color = signif_dir), 
+             size = 0.1) +
+  ylim(-max(abs(md_data$log2FoldChange)), max(abs(md_data$log2FoldChange))) +
+  scale_color_manual(values = c("black", "red", "blue"), drop = FALSE) +
+  theme_bw() +
+  facet_wrap(~contrast)
+```
+
+
+## 3.2 - P-value distributions
+
+```{r, fig.width = 10, fig.height = 6}
+resultsTable %>%
+      mutate(`pBH < 0.05` = ifelse(padj < 0.05, "TRUE", "FALSE") %>%
+               factor(., levels = c("TRUE", "FALSE"))) %>%
+    ggplot(data = ., aes(x = pvalue, fill = `pBH < 0.05`)) +
+      geom_histogram(breaks = seq(0,1,0.01)) +
+      scale_fill_manual(values = c("red", "black"), drop=FALSE) +
+      theme_bw() +
+    facet_wrap(~contrast, scales = "free_y")
+```
+
+# 4 - Differential expression results
+
+Note that we have sent an excel spreadsheet called ``r resultsTable_filename`` separately with the full list of genes and stats for each contrast of interest.
+
+The first sheet of ``r resultsTable_filename`` summarizes the number of differentially expressed genes (Bonferroni-Hochberg adjusted p-value < 0.05) in each contrast.
+
+All genes that passed filtering by expression (`Section 3` of ``r report_filename_QC`` report) are included in the report. Genes that were removed during filtering will have empty entries in the results table.
+
+The sections below summarize the results graphically. Only the significant DEGs are included.
+
+
+## 4.1 - Summary of DEG counts {.tabset}
+
+### Table
+```{r}
+n_deg_summary %>%
+  mutate(signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓")) %>%
+  select(contrast, signif_signs) %>%
+  knitr::kable()
+```
+
+### Bar plots
+
+```{r, fig.width = 6, fig.height = 6}
+n_deg_summary %>%
+  pivot_longer(cols = c(signif_down, signif_up), 
+               names_to = "sign", 
+               values_to = "n_signif") %>%
+  mutate(n_signif = ifelse(sign == "signif_down",
+                           -n_signif, n_signif)) %>%
+  ggplot(aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw() +
+  ylab("contrast")
+```
+
+## 4.2 - Tables of significant genes for each contrast {.tabset}
+
+```{r}
+resTable_chunk_text <- c(
+'### {{contrast_i}} {.tabset}\n',
+'```{r}',
+'resultsTable %>%
+  as_tibble() %>%
+  filter(contrast == "{{contrast_i}}",
+         padj < 0.05) %>%
+  arrange(pvalue) %>%
+  select(gene, l2fc = log2FoldChange, pBH = padj) %>%
+  DT::datatable(extensions = "Buttons",
+                options = list(dom = "Blfrtip",
+                               buttons = c("copy", "csv", "excel", "pdf"),
+                               pageLength = 30))',
+'```\n',
+'\n')
+```
+
+```{r deg_tables, results='asis'}
+out <- NULL
+for (contrast_i in colnames(contr.matrix)) {
+  out <- c(out, knitr::knit_expand(text = resTable_chunk_text))
+}
+
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+```
+
+
+## 4.3 - Heatmaps of top `r n_genes` genes for each contrast {.tabset}
+
+For each cluster-contrast combinations, below are plotted the heatmaps of the top `r n_genes` (by p-value) most differentially expressed genes. ***Note that not all of the genes included were considered significantly differentially expression (BH-corrected p-value < 0.05) but are color-coded to make that clear:***
+
+Gene names (row names) are colored red if the expression of P11c relative to Ova is significantly  up and blue if significantly down. Nonsignificant genes are included in black.
+
+*Note: Rows are clustered based on similarity and thus are not ordered by p-value*.
+
+```{r}
+chunk_text_heatmap <- c(
+  '### {{contrast_id}}\n',
+  '```{r, fig.width = 14, fig.height = 7, message = FALSE, warning = FALSE}',
+  'plot_heatmap_from_resTable(
+    bulk = bulk, resultsTable = resultsTable, 
+    contrast_id = "{{contrast_id}}", n_genes = n_genes,
+    sampleID = "sampleID", groupID = "grp.day")',
+  '```\n\n')
+```
+
+```{r deg_heatmaps, results='asis'}
+out <- NULL
+for (contrast_id in unique(resultsTable$contrast)) {
+  out <- c(out, knitr::knit_expand(text = chunk_text_heatmap))
+}
+
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+```
+
+
+# 5 - Gene set enrichment analysis {.tabset}
+
+I tried 3 different gene set lists from the msigdb database: Hallmark (H), Gene Ontology Biological Process (GOBP), and canonical pathways (CP). See details at the [msigdb website](https://www.gsea-msigdb.org/gsea/msigdb/human/genesets.jsp).
+
+For each database I'm showing a "gsea dot plot" with the top 30 genes with uncorrected pval < 0.1:
+
+- color = `pval` (uncorrected p-value)
+- size of dot = `n_leadingEdge` (Number of genes in the leading edge)
+- x axis = `ES` (enrichment score)
+- y axis = `pathway`
+
+There's also a stats table for each. Note that click the `excel` or `csv` you can save each as a separate file to view externally if you like.
+
+The stats tables have also been collected in a separate excel file, ``r GSEA_filename``.
+
+```{r}
+chunk_text_gsea_summary <- c(
+'#### **Stats table**\n',
+'```{r, message=FALSE, warning=FALSE}',
+'gsea_top_signif <- gsea_results[["{{db}}"]][["{{contr}}"]] %>%
+    as_tibble() %>%
+    filter(pval < 0.1, size >= 15) %>%
+    slice_head(n = {{n_pathways}}) %>%
+    mutate(term = str_replace_all(string = pathway, pattern = "_", replacement = " "), 
+           n_leadingEdge = str_count(leadingEdge, pattern = ",") + 1) %>%
+    rowwise()  %>%
+    mutate(leading_edge = paste(leadingEdge, collapse = ", "))',
+'if (nrow(gsea_top_signif) > 0) {
+  gsea_top_signif %>%
+    dplyr::select(term, ES, NES, pval, size, n_leadingEdge, leading_edge) %>%
+    DT::datatable(extensions = "Buttons",
+                  options = list(dom = "Blfrtip",
+                                 buttons = c("copy", "csv", "excel", "pdf"),
+                                 pageLength = 10,
+                                 comlumnDefs = list(list(width="80px", targets = c(1))))) %>%
+    DT::formatRound(c("ES", "NES", "pval"), digits = 3)
+} else {
+  print("No functional terms with pval < 0.1")
+}',
+'```\n')
+
+chunk_text_gsea_dotplot <- c(
+'#### **GSEA dot plot**\n',
+'```{r, message=FALSE, warning=FALSE, fig.width = 15, fig.height = 8}',
+'gsea_top_signif <- gsea_results[["{{db}}"]][["{{contr}}"]] %>%
+  as_tibble() %>%
+  mutate(term = pathway,
+         n_leadingEdge = str_count(leadingEdge, pattern = ",") + 1) %>%
+  filter(pval < 0.1) %>%
+  slice_head(n = {{n_pathways}})',
+'if (nrow(gsea_top_signif) > 0) {
+  gsea_top_signif %>%
+    ggplot(aes(x = NES, y = fct_reorder(term, NES), size = n_leadingEdge, color = pval)) +
+    geom_point() +
+    scale_color_gradient(low = "red", high = "blue") +
+    theme_bw() +
+    scale_y_discrete(labels = scales::label_wrap(10)) +
+    ylab("term")
+} else {
+  print("No functional terms with pval < 0.1")
+}',
+'```\n')
+```
+
+
+```{r gsea_knit_expand, results='asis'}
+## Get a "grid" (as in `expand.grid()`) of all combinations of db, cluster, and contrast so we can pick any combination arbitrarily
+gsea_results_grid <- gsea_results %>% 
+    lapply(., function(y) {
+      y %>% bind_rows(.id = "contrast")
+  }) %>% bind_rows(.id = "db") %>%
+  mutate(contrast = fct(contrast, levels = levels(resultsTable$contrast))) %>%
+ arrange(db, contrast)
+  
+out <- NULL
+for (contr in unique(gsea_results_grid$contrast)) {
+  out <- c(out, paste0('## ', contr, ' {.tabset}\n\n'),
+           paste0('Results for each of the ', length(unique(gsea_results_grid$db)), ' databases are shown in separate, clickable tabs below.\n'))
+  for (db in unique(gsea_results_grid$db)) {
+    out <- c(out, paste0('### ', db, '\n\n'))
+    out <- c(out, knitr::knit_expand(text = chunk_text_gsea_dotplot))
+    out <- c(out, knitr::knit_expand(text = chunk_text_gsea_summary))
+  }
+  out <- c(out, '***\n')
+}
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+
+```
+
+

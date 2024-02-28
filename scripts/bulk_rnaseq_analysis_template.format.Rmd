@@ -5,6 +5,7 @@ date:  "`r Sys.Date()`"
 output: 
   rmdformats::robobook:
     fig_width: 9
+    css: "stylesheets/robobook.css"
 ---
 
 ```{r setup, include=FALSE}
@@ -15,15 +16,6 @@ knitr::opts_chunk$set(warning = FALSE,
                       fig.width = 8, 
                       fig.height = 4)
 ```
-
-<style type="text/css">
-.book .book-body .page-inner {
-  max-width: 1600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-</style>
-
 
 # QC {.tabset}
 

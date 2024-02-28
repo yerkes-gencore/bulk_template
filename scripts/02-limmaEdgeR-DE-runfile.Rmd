@@ -1,0 +1,421 @@
+---
+title: "02-limmaEdgeR-DE-runfile"
+author: "ENPRC Genomics Core"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+```
+
+# Libraries
+
+```{r}
+library(tidyverse)
+library(limma)
+library(edgeR)
+remotes::install_github("yerkes-gencore/gencoreBulk#19")
+library(gencoreBulk)
+library(here)
+library(msigdbr)
+library(fgsea)
+source(here("R/limmaEdgeR_functions.R")) # will move these to gencoreBulk package
+```
+
+
+# Outline of workflow
+
+1. Define contrasts
+  - Keep this separate from the `bulk` object for flexibility
+2. DE diagnostics
+  - Run `voomLmFit()` or `glmQLFit()`
+  - Generate results tables
+  - Plot MD
+  - Plot p-value distributions
+3. DE results
+  - Summarize DEG counts in each contrast
+  - Export results list to excel file
+
+## Report metadata
+
+These variables help assign filenames to outputs and reports so you can rerun this script with different parameters without mixing up or overwriting files you want to track or compare.
+
+```{r}
+project_name <- "p00000_template"
+report_number <- "02"
+report_author <- "Micah Fletcher"
+```
+
+
+# 1 - Read in bulk object rds
+
+```{r}
+bulk <- read_rds(here("rds/report-01-QC/bulk-20240222.rds"))
+```
+
+
+# 2 - Define contrasts
+
+See https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html for a detailed tutorial on how to set up design formulas, model matrices and contrast matrices for all of the commonly encountered RNAseq study designs.
+
+The example below is for a repeated measures design from the `p23224_Matthew`.
+
+Assuming we'll be using the `limma::duplicateCorrelation()` method of modeling individual as a random effect:
+```{r}
+bulk$md$design <- stats::model.matrix(~ 0 + grp.day, data = bulk$md$sampleTable)
+colnames(bulk$md$design) <- gsub("grp.day", "", colnames(bulk$md$design))
+
+contr.matrix <- makeContrasts(
+  # Within-day group effects
+  P14_grp3vsgrp2 = grp3.P14 - grp2.P14,
+  D00_grp3vsgrp2 = grp3.D00 - grp2.D00,
+  D03_grp3vsgrp2 = grp3.D03 - grp2.D03,
+  D07_grp3vsgrp2 = grp3.D07 - grp2.D07,
+  D28_grp3vsgrp2 = grp3.D28 - grp2.D28,
+  # Within-group-2 day effects
+  grp2_D03vsD00 = grp2.D03 - grp2.D00,
+  grp2_D07vsD00 = grp2.D07 - grp2.D00,
+  grp2_D28vsD00 = grp2.D28 - grp2.D00,
+  # Within-group-3 day effects
+  grp3_D03vsD00 = grp3.D03 - grp3.D00,
+  grp3_D07vsD00 = grp3.D07 - grp3.D00,
+  grp3_D28vsD00 = grp3.D28 - grp3.D00,
+  # # Average group effects
+  # Pre_grp3vsgrp2 = (grp3.P14 + grp3.D00)/2 - (grp2.P14 + grp2.D00)/2,
+  # Post_grp3vsgrp2 = (grp3.D03 + grp3.D07 + grp3.D28)/3 - (grp2.D03 + grp2.D07 + grp2.D28)/3,
+  # # Change-from-baseline ignoring group
+  # Overall_D03vsD00 = (grp3.D03 + grp2.D03)/2 - (grp3.D00 + grp2.D00)/2,
+  # Overall_D07vsD00 = (grp3.D07 + grp2.D07)/2 - (grp3.D00 + grp2.D00)/2,
+  # Overall_D28vsD00 = (grp3.D28 + grp2.D28)/2 - (grp3.D00 + grp2.D00)/2,
+  # Interaction between difference-from-baseline and group
+  D03vsD00_grp3vsgrp2 = (grp3.D03 - grp3.D00) - (grp2.D03 - grp2.D00),
+  D07vsD00_grp3vsgrp2 = (grp3.D07 - grp3.D00) - (grp2.D07 - grp2.D00),
+  D28vsD00_grp3vsgrp2 = (grp3.D28 - grp3.D00) - (grp2.D28 - grp2.D00),
+  levels = bulk$md$design
+  )
+```
+
+
+# 3 - DE diagnostics
+
+## 3.1 - Run `voomLmFit()` or `glmQLFit()`
+
+```{r}
+bulk <- fitVoomLm(bulk, 
+                  contr.matrix=contr.matrix, 
+                  sample.weights = TRUE, 
+                  block = bulk$dge$samples$SubjectID)
+```
+
+
+## 3.2 - Generate results tables
+
+```{r}
+resultsTable <- createResTable(bulk$contrasts, contr.matrix)
+```
+
+There are two easy ways to access tables split by contrast for different purposes using `for()` or `split()`
+```{r}
+# for (contr in unique(resultsTable$contrast)) {
+#   resultsTable %>%
+#     filter(contrast == contr)
+# }
+```
+
+```{r}
+# resultsTable %>%
+#   split(., .$contrast)
+```
+
+
+## 3.3 - Plot MD
+
+```{r, fig.width = 8, fig.height = 6}
+md_data <- resultsTable %>%
+    mutate(signif_dir = ifelse(padj >= 0.05, "NotSig",
+                           ifelse(log2FoldChange < 0, "Down", "Up")) %>%
+             factor(., levels = c("NotSig", "Up", "Down")),
+           signif = padj < 0.05)
+  
+ggplot() +
+  geom_point(data = filter(md_data, !signif),
+             aes(x = AveExpr, y = log2FoldChange), 
+             color = "black", size = 0.1) +
+  geom_point(data = filter(md_data, signif), 
+             aes(x = AveExpr, y = log2FoldChange, color = signif_dir), 
+             size = 0.1) +
+  ylim(-max(abs(md_data$log2FoldChange)), max(abs(md_data$log2FoldChange))) +
+  scale_color_manual(values = c("black", "red", "blue"), drop = FALSE) +
+  theme_bw() +
+  facet_wrap(~contrast)
+```
+
+
+## 3.4 - Plot p-value distributions
+
+```{r, fig.width = 8, fig.height = 6}
+resultsTable %>%
+      mutate(`pBH < 0.05` = ifelse(padj < 0.05, "TRUE", "FALSE") %>%
+               factor(., levels = c("TRUE", "FALSE"))) %>%
+    ggplot(data = ., aes(x = pvalue, fill = `pBH < 0.05`)) +
+      geom_histogram(breaks = seq(0,1,0.01)) +
+      scale_fill_manual(values = c("red", "black"), drop=FALSE) +
+      theme_bw() +
+    facet_wrap(~contrast, scales = "free_y")
+```
+
+# 4 - DE results
+
+## 4.1 - Summarize DEG counts in each contrast
+
+```{r}
+n_deg_summary <- resultsTable %>% 
+  group_by(contrast) %>%
+    dplyr::rename(l2fc = log2FoldChange, pBH = padj) %>%
+    summarize(signif_down = sum(pBH < 0.05 & l2fc < 0),
+              nonsignif = sum(pBH >= 0.05),
+              signif_up = sum(pBH < 0.05 & l2fc > 0)) %>%
+  mutate(signif = signif_up + signif_down)
+```
+
+### Table
+```{r}
+n_deg_summary %>%
+  mutate(signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓")) %>%
+  select(contrast, signif_signs) %>%
+  knitr::kable()
+```
+
+### Bar plots
+```{r, fig.width = 12, fig.height = 8}
+n_deg_summary %>%
+  pivot_longer(cols = c(signif_down, signif_up), 
+               names_to = "sign", 
+               values_to = "n_signif") %>%
+  mutate(n_signif = ifelse(sign == "signif_down",
+                           -n_signif, n_signif)) %>%
+  ggplot(aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw() +
+  ylab("contrast")
+```
+
+## 4.2 - Export results list to excel file
+
+## Create a subdir name and keep it consistent across dirs
+
+```{r}
+## Subdir name for `outputs` and `rds`
+subdir <- paste0("report-", report_number, "-DE")
+## Formatted date for filenames
+getDate <- function() {
+  format(Sys.Date(), "%Y%m%d")
+}
+```
+
+Create output dir for this report if it doesn't already exist
+```{r}
+if (!dir.exists(here("outputs/", subdir))) {
+  dir.create(here("outputs/", subdir))
+}
+```
+
+### Export excel file with columns for padj and lfc for each contrast
+```{r}
+resultsTable_for_export <- unique(resultsTable$contrast) %>%
+lapply(., function(contr) {
+  resultsTable %>% 
+    filter(contrast == contr) %>%
+    dplyr::select(gene, l2fc = log2FoldChange, pBH = padj)%>%
+    dplyr::rename_with(~ paste0(contr, "_", .x, recycle0 = TRUE),
+                  all_of(c("l2fc", "pBH")))
+}) %>% 
+  reduce(full_join, by = "gene")
+
+resultsTable_filename <- paste0(
+  project_name, "-", 
+  report_number, "-",
+  "DE_results_tables-", 
+  getDate(), ".xlsx"
+  )
+
+c(list("Summary" = n_deg_summary), 
+  list("ResultsTable" = resultsTable_for_export)) %>%
+writexl::write_xlsx(here("outputs/", subdir, resultsTable_filename))
+```
+
+# 5 - GSEA
+
+## 5.1 - Pre-rank DE stats
+
+```{r}
+prepGseaStats2 <- function(marker_table, p_col = "p_val", lfc_col = "avg_log2FC") {
+  ranked_genes <- marker_table %>% filter(!is.na(.data[[p_col]]))
+  ranked_genes$stat <- ranked_genes[[lfc_col]] * -log10(ranked_genes[[p_col]] + .Machine$double.xmin)
+  gsea_stats <- setNames(ranked_genes$stat, nm = rownames(ranked_genes))
+  gsea_stats <- sort(gsea_stats)
+}
+
+gsea_stats <- resultsTable %>%
+  filter(!is.na(pvalue)) %>%
+  mutate(rank_stat = log2FoldChange * -log10(pvalue + .Machine$double.xmin)) %>% 
+  split(.$contrast) %>%
+    lapply(., function(y) {
+      y %>% select(gene, rank_stat) %>%
+        deframe() %>%
+        sort()
+    })
+
+```
+
+## 5.2 - Prep gene lists
+
+```{r}
+msigH <- msigdbr(species = "Homo sapiens", category = "H") %>%
+  dplyr::select(gene_symbol, gs_name) %>% unstack()
+
+msigGOBP <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "GO:BP") %>%
+  dplyr::select(gene_symbol, gs_name) %>% unstack()
+
+msigCP <- c(
+  msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:BIOCARTA") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:PID") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:REACTOME") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:WIKIPATHWAYS") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack()
+)
+```
+
+## 5.3 - Run GSEA
+```{r}
+gsea_results <- list()
+
+gsea_results$H <- gsea_stats %>%
+  lapply(., function(stats_vec) {
+    fgsea(pathways = msigH, stats = stats_vec,
+          minSize = 15, maxSize = 100) %>% arrange(pval)
+  })
+
+gsea_results$GOBP <- gsea_stats %>%
+  lapply(., function(stats_vec) {
+    fgsea(pathways = msigGOBP, stats = stats_vec,
+          minSize = 15, maxSize = 100) %>% arrange(pval)
+  })
+
+gsea_results$CP <- gsea_stats %>%
+  lapply(., function(stats_vec) {
+    fgsea(pathways = msigCP, stats = stats_vec,
+          minSize = 15, maxSize = 100) %>% arrange(pval)
+  })
+
+```
+
+## 5.4 - Export results table with all contrasts in a wide format as excel file
+```{r}
+gsea_results %>%
+  lapply(., function(x) {
+    bind_rows(x, .id = "contrast")
+    }) %>%
+  bind_rows(.id = "database")
+
+
+## Format results for excel/reports
+gsea_results_fmt <- lapply(names(gsea_results), function(db) {
+    lapply(gsea_results[[db]], function(gsea_results_contrast) {
+      gsea_results_contrast %>%
+        as_tibble() %>%
+        arrange(padj) %>%
+        rowwise() %>%
+        mutate(leading_edge = paste(leadingEdge, collapse = ", ")) %>%
+        ungroup() %>%
+        dplyr::select(pathway, ES, NES, log2err, pval, padj, leading_edge)
+    })
+})
+names(gsea_results_fmt) <- names(gsea_results)
+# Reorder contrast in order of levels to keep consistent order in reports
+gsea_results_fmt <- gsea_results_fmt %>% 
+  lapply(., function(results_db) {
+    results_db <- results_db[levels(resultsTable$contrast)] 
+})
+
+## One sheet per database, each all contrasts side-by-side
+gseaResults_compact <- lapply(names(gsea_results), function(db) {
+    lapply(names(gsea_results[[db]]), function(contrast) {
+      gsea_results_fmt[[db]][[contrast]] %>%
+        dplyr::select(pathway, NES, pBH = padj) %>%
+        dplyr::rename_with(~ paste0(contrast, "_", .x, recycle0 = TRUE), all_of(c("NES", "pBH")))
+          }) %>%
+    purrr::reduce(full_join, by = "pathway")
+})
+names(gseaResults_compact) <- names(gsea_results_fmt)
+
+GSEA_filename <- paste0(
+  project_name, "-", 
+  report_number, "-",
+  "GSEA_results_tables", "-",
+  getDate(), ".xlsx"
+  )
+
+gseaResults_compact %>%
+  writexl::write_xlsx(here("outputs", subdir, GSEA_filename))
+```
+
+# 6 - Write rds
+
+## Write `bulk` rds
+```{r}
+if (!dir.exists(here("rds/", subdir))) {
+  dir.create(here("rds/", subdir))
+}
+
+bulk %>%
+  write_rds(., here("rds/", subdir, paste0("bulk-", getDate(), ".rds")))
+```
+
+
+# 7 - Render reports
+
+## Set filenames
+
+```{r}
+# report_title_root <- "QC"
+report_filename_QC <- paste0(project_name, "-", 
+                             report_number, "-",
+                             "QC-",
+                             format(Sys.Date(), "%Y%m%d"), ".html")
+
+# report_title_root <- "DE"
+report_filename_DE <- paste0(project_name, "-", 
+                             report_number, "-",
+                             "DE-",
+                             format(Sys.Date(), "%Y%m%d"), ".html")
+```
+
+## Number of genes in heatmaps
+
+```{r}
+n_genes <- 30
+n_pathways <- 30
+```
+
+
+## Render
+```{r}
+rmarkdown::render(input = here("scripts/02-limmaEdgeR-DE-format.Rmd"),
+                  output_file = report_filename_DE,
+                  output_dir = here('reports'))
+```
