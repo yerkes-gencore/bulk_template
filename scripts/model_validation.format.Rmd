@@ -1,5 +1,7 @@
 ---
-title: "model_validation"
+params:
+  title: "model validation"
+title: "`r params$title`"
 author: "ENPRC Gencore"
 date:  "`r Sys.Date()`"
 output: 
@@ -18,16 +20,25 @@ knitr::opts_chunk$set(warning = FALSE,
                       dev='png')
 ```
 
+```{css}
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+```
+
+
 # Review metadata {.tabset}
 
 ## All metadata
 
 ```{r}
 metadata %>%
-  select(-c(FileID, SampleID, grp.day, readPath)) %>%
-  DT::datatable(
-    colnames = c('Subjet', 'Group', 'Group (expanded)', 'Timepoint', 'Response', 'SampleID'),
-    rownames = FALSE,
+  select(-c(FileID, date, ellipse, SampleID, sizeFactor, replaceable)) %>%
+  DT::datatable( 
+    colnames = c('Group', 'Individual', 'Timepoint', 'Group ID'),
+    rownames = TRUE,
     filter = 'top')
   # select(sampleID, SubjectID, grp)
 ```
@@ -38,30 +49,25 @@ metadata %>%
 metadata_summary
 ```
 
-# Samples by individual + group
+### Samples by individual + timepoint
 
 ```{r}
-table(metadata$SubjectID, metadata$grp)
+table(metadata$individual, metadata$timepoint)
 ```
 
-## Samples by subject + day
+### Samples by group + timepoint
 
 ```{r}
-table(metadata$SubjectID, metadata$day)
+table(metadata$Group, metadata$timepoint)
 ```
 
-## Response by group
+### Samples by individual + group
 
 ```{r}
-table(metadata$response, metadata$grp)
+table(metadata$individual, metadata$ind, metadata$Group)
 ```
 
-## Response by subjectID
-
-```{r}
-table(metadata$response, metadata$SubjectID)
-```
-# First model selection
+# Model design
 
 Formula:
 
@@ -75,26 +81,46 @@ Columns in design matrix:
 colnames(design_matrix)
 ```
 
-Contrast matrix:
-
 ```{r}
-contrast_matrix
-```
-```{r}
-resTable_AllOneTbl %>% 
-  group_by(contrast) %>%
-  slice_min(pvalue, n = 10) 
+knitr::kable(design_matrix)
 ```
 
-# Validation plots
+
+## Contrast matrix
 
 ```{r}
-plots[['JUN']]
+contrast_matrix_expanded %>% knitr::kable()
+```
+
+
+```{r}
+contrast_matrix %>% t() %>% knitr::kable()
+```
+
+# Results summary
+
+```{r}
+plots[['overall_table']]
+```
+
+# Case example ISG15
+
+Looking at ISG15 expression as an indicator of model accuracy
+
+```{r}
+plots[['ISG15_overall']]
 ```
 
 ```{r}
-plots['DACT1']
+plots[["ISG15_overall_table"]]
 ```
 
-Maybe these per-day comparisons should not include the baseline change
 
+```{r}
+plots[['ISG15_D2']]
+```
+
+
+```{r}
+plots[['ISG15_D14']]
+```
