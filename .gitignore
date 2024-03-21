@@ -1,7 +1,8 @@
 ## Template-related stuff that's likely too big to git track
+plots/*
 outputs/*
 reports/*
-saved_rds_objects/*
+rds/*
 
 ## R and RStudio-related stuff
 # History files
@@ -44,4 +45,3 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
-
