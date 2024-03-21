@@ -27,7 +27,19 @@ library(gencoreBulk)
 # Read metadata
 
 ```{r}
-obj <- readRDS('/yerkes-cifs/runs/analyst/micah/Analysis/2023_Analyses/p23224_Matthew//p23224_Matthew_Analysis/rds/report-01/bulk-p23224_Matthew-no_design_yet.rds')
+obj <- readRDS(here('saved_rds_objects/analysis_post_QC.Rds'))
+```
+
+```{r}
+obj$dds$timepoint <- factor(obj$dds$timepoint, levels = c('D0', 'D2', 'D4', 'D8', 'D14', 'D28'))
+obj$dds$Group <- factor(obj$dds$Group, levels = c('Bolus', 'Escalating'))
+obj$dds$ind <- factor(plyr::mapvalues(obj$dds$individual,
+                                         from = c('RAt19', 'RCl19', 'RKd19', 'RKf19', 'RKn19',
+                                                  'RFg19', 'RKr19', 'ROj19', 'RPm19', 'RZm19'),
+                                         to = c(1:5, 1:5)))
+```
+
+```{r}
 metadata <- as.data.frame(obj$md$sampleTable)
 exp_data <- obj$dge
 plots <- list()
@@ -35,40 +47,28 @@ plots <- list()
 
 ```{r}
 metadata %>%
-  select(-c(FileID, SampleID, grp.day, readPath))
+  select(-c(FileID, ellipse, SampleID, sizeFactor, replaceable))
   # select(sampleID, SubjectID, grp)
 ```
 
 ```{r}
-relevant_cols <- colnames(metadata %>% select(-c(FileID, SampleID, grp.day, readPath, sampleID)))
+relevant_cols <- colnames(metadata %>% select(-c(FileID, ellipse, SampleID, sizeFactor, replaceable)))
 metadata_summary <- lapply(relevant_cols, function(x) table(unlist((metadata[[x]]))))
 names(metadata_summary) <- relevant_cols
 metadata_summary
 ```
 
 ```{r}
-table(metadata$SubjectID, metadata$grp)
+table(metadata$individual, metadata$timepoint)
 ```
 
 ```{r}
-table(metadata$SubjectID, metadata$day)
+table(metadata$Group, metadata$timepoint)
 ```
 
 ```{r}
-table(metadata$response, metadata$grp)
+table(metadata$individual, metadata$ind, metadata$Group)
 ```
-
-```{r}
-table(metadata$response, metadata$SubjectID)
-```
-
-# Set levels
-
-```{r}
-metadata$day <- factor(metadata$day, levels = c('P14', 'D00', 'D03', 'D07', 'D28'))
-metadata$grp <- factor(metadata$grp, levels = c('grp2', 'grp3'))
-```
-
 
 # Design
 
@@ -78,7 +78,20 @@ design_matrix  <- stats::model.matrix(design_formula, data = metadata)
 colnames(design_matrix)
 ```
 
+```{r}
+design_matrix
+```
+
 ## Fit design
+
+### DESeq
+
+```{r}
+design(obj$dds) <- design_formula
+obj$dds <- DESeq2::DESeq(obj$dds)
+```
+
+### edgeR
 
 ```{r}
 model_fit <- edgeR::voomLmFit(counts = obj$dge,
@@ -100,48 +113,78 @@ for later. Just use the colnames of the design matrix.
 colnames(design_matrix)
 ```
 
+Use spaces around terms to make sure they are detected by term extraction
+functions for plotting (WIP)
 
 ```{r}
 contrast_matrix_expanded <- data.frame(
   contrast_names = c(
-    'P14_grp3vgrp2',
-    'D00_grp3vgrp2',
-    'D03_grp3vgrp2',
-    'D07_grp3vgrp2',
-    'D28_grp3vgrp2',
-    'grp3vgrp2_D00vP14'
+    'Bolus_D2',
+    'Bolus_D4',
+    'Bolus_D8',
+    'Bolus_D14',
+    'Bolus_D28',
+    'Escalating_D2',
+    'Escalating_D4',
+    'Escalating_D8',
+    'Escalating_D14',
+    'Escalating_D28',
+    'D2_Escalating.v.Bolus',
+    'D4_Escalating.v.Bolus',
+    'D8_Escalating.v.Bolus',
+    'D14_Escalating.v.Bolus',
+    'D28_Escalating.v.Bolus'
   ),
   numerators = c(
-    '(Intercept)',
-    '(Intercept) + dayD00 + grpgrp3 + dayD00:grpgrp3',
-    '(Intercept) + dayD03 + grpgrp3 + dayD03:grpgrp3',
-    '(Intercept) + dayD07 + grpgrp3 + dayD07:grpgrp3',
-    '(Intercept) + dayD28 + grpgrp3 + dayD28:grpgrp3',
-    '(Intercept) + grpgrp3 + dayD00:grpgrp3'
+    'timepointD2',
+    'timepointD4',
+    'timepointD8',
+    'timepointD14',
+    'timepointD28',
+    'GroupEscalating + timepointD2 + timepointD2.GroupEscalating',
+    'GroupEscalating + timepointD4 + timepointD4.GroupEscalating',
+    'GroupEscalating + timepointD8 + timepointD8.GroupEscalating',
+    'GroupEscalating + timepointD14 + timepointD14.GroupEscalating',
+    'GroupEscalating + timepointD28 + timepointD28.GroupEscalating',
+    '( GroupEscalating + timepointD2 + timepointD2.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD4 + timepointD4.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD8 + timepointD8.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD14 + timepointD14.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD28 + timepointD28.GroupEscalating ) - ( GroupEscalating + timepointD0 )'
   ),
   denominators = c(
-    '(Intercept)',
-    '(Intercept) + dayD00',
-    '(Intercept) + dayD03',
-    '(Intercept) + dayD07',
-    '(Intercept) + dayD28',
-    '(Intercept) + grpgrp3'
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'timepointD2 - timepointD0',
+    'timepointD4 - timepointD0',
+    'timepointD8 - timepointD0',
+    'timepointD14 - timepointD0',
+    'timepointD28 - timepointD0'
   )
 )
-contrast_matrix_expanded
 ```
+
 
 ```{r}
 ## have to make valid names first
-contrast_matrix <- contrast_matrix_expanded
-contrast_matrix$denominators <-
-  sapply(contrast_matrix$denominators, function(x) {
-    paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
-  })
-contrast_matrix$numerators <-
-  sapply(contrast_matrix$numerators, function(x) {
-    paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
-  })
+## Current workflow requires user to make valid names instead
+# contrast_matrix <- contrast_matrix_expanded
+# contrast_matrix$denominators <-
+#   sapply(contrast_matrix$denominators, function(x) {
+#     paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+#   })
+# contrast_matrix$numerators <-
+#   sapply(contrast_matrix$numerators, function(x) {
+#     paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+#   })
 
 ## Then make contrasts
 contrast_matrix <- apply(contrast_matrix, MARGIN = 1, function(row) {
@@ -154,6 +197,15 @@ contrast_matrix
 ```
 
 # Extract contrasts
+
+## DESeq
+
+```{r}
+model_results <- apply(contrast_matrix, 2, gencoreBulk::extractFilteredDESeqResults, dds = obj$dds)
+names(model_results) <- colnames(contrast_matrix)
+```
+
+## EdgeR
 
 ```{r}
 ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
@@ -178,22 +230,39 @@ createResTables <- function(obj) {
 }
 
 # Arrange by cluster, then by contrast
-resTables <- createResTables(extracted_contrasts)
+model_results <- createResTables(extracted_contrasts)
 
 # Put all the results in a single table
-resTable_AllOneTbl <- lapply(resTables, function(one_tbl) {
+model_results_joined <- lapply(resTables, function(one_tbl) {
     one_tbl %>%
     rownames_to_column(var = "gene")
   }) %>% bind_rows(., .id = "contrast")
 ```
 
-# Results table
+# Check results
 
 ```{r}
-resTable_AllOneTbl
+model_results[[1]] %>% head()
 ```
 
-# Visualize coefficients
+## Summary table
+
+```{r}
+## Not very generalized yet
+tmp <- data.table::rbindlist(lapply(DESeq_results, function(x) {
+  up <- x %>% as.data.frame() %>% filter(log2FoldChange > 0) %>% filter(padj<0.05) %>% nrow()
+  down <- x %>% as.data.frame() %>% filter(log2FoldChange < 0) %>% filter(padj<0.05) %>% nrow()
+  return(list(up=up, down=down))
+}))
+
+tmp <- cbind(timepoint = c('D2', 'D4', 'D8', 'D14', 'D28'), tmp[1:5,], tmp[6:10,], tmp[11:15,])
+plots[['overall_table']] <- tmp %>%
+  knitr::kable(digits = 3) %>%
+  kableExtra::add_header_above(c('', 'Bolus' = 2, 'Escalating' = 2, 'Interaction' = 2))
+plots[['overall_table']]
+```
+
+# Visualize coefficients (EdgeR, WIP)
 
 Plot expression boxplots for quick inspections
 
