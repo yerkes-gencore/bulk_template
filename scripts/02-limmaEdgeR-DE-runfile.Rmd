@@ -118,7 +118,7 @@ bulk <- fitVoomLm(bulk,
 ## 3.2 - Generate results tables
 
 ```{r}
-resultsTable <- createResTable(bulk$contrasts, contr.matrix)
+resultsTable <- createResTable(bulk$fit.contr, contr.matrix)
 ```
 
 There are two easy ways to access tables split by contrast for different purposes using `for()` or `split()`
