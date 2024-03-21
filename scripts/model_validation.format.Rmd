@@ -1,11 +1,14 @@
 ---
-title: "model_validation"
+params:
+  title: "model validation"
+title: "`r params$title`"
 author: "ENPRC Gencore"
 date:  "`r Sys.Date()`"
 output: 
   rmdformats::robobook:
     fig_width: 9
     toc_depth: 3
+    css: "stylesheets/robobook.css"
 ---
 
 ```{r setup, include=FALSE}
