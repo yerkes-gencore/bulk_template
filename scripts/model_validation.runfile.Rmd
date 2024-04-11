@@ -305,3 +305,22 @@ plotGeneExpression(gene = 'JUN',
                         arrow = ggplot2::arrow()) 
 ```
 
+# Render
+
+```{r}
+rmarkdown::render(here::here('scripts/model_validation.format.Rmd'),
+                  output_file = 'model_validation.html',
+                  output_dir = here::here('reports'),
+                  params = list(
+                    title = 'Bulk RNA Analysis Report')
+                  )
+```
+
+# Save model
+
+```{r}
+saveRDS(obj$dds, here('rds/obj-post_model_fit.Rds'))
+
+saveRDS(model_results, here('rds/extracted_model_fits.Rds'))
+```
+
