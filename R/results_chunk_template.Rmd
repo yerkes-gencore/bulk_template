@@ -9,7 +9,7 @@
 ## {{i}}
 
 ```{r}
-result <- model_results[[{{i}}]]
+result <- model_results[['{{i}}']]
 ```
 
 
@@ -22,7 +22,7 @@ print(result@elementMetadata$description[2])
 ```
   
 ```{r}
-generateVolcanoPlot(result, labels = tlr_genes)
+generateVolcanoPlot(result) #, labels = tlr_genes
 ```
 
 ```{r}
