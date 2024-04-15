@@ -14,23 +14,23 @@ knitr::opts_chunk$set(warning = TRUE,
                       fig.width = 8, 
                       fig.height = 4)
 
-library(ggforce)
-library(grid)
-library(ggpubr)
-library(EDASeq)
+# library(ggforce)
+# library(grid)
+# library(ggpubr)
+# library(EDASeq)
 #library(shiny)
 library(EnhancedVolcano)
-library(tools)
+# library(tools)
 library(ComplexHeatmap)
-library(gridExtra)
-library(gtable)
-library(reshape2)
+# library(gridExtra)
+# library(gtable)
+# library(reshape2)
 #library(rlang)
-library(forcats)
-library(gtools)
+# library(forcats)
+# library(gtools)
 library(RColorBrewer)
 library(fgsea)
-library(MatrixGenerics)
+# library(MatrixGenerics)
 library(tidyverse)    ## General logic and processing
 library(yaml)         ## Parse config
 library(DESeq2)       ## Makes us have a job
@@ -50,7 +50,7 @@ library(gencoreBulk)  ## See the git repo for instructions on using this
 
 
 ## sometimes they conflict with other loaded packages
-counts <- DESeq2::counts
+# counts <- DESeq2::counts
 here <- here::here
 ```
 
