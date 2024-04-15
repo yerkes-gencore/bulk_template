@@ -54,53 +54,22 @@ counts <- DESeq2::counts
 here <- here::here
 ```
 
-<style type="text/css">
-.book .book-body .page-inner {
-  max-width: 1600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-</style>
+# Load data
 
 ```{r}
-analysis <- readRDS(here('rds/analysis_post_QC.Rds'))
-analysis$analysis_config <- yaml.load_file(here("config/analysis_config.yml"))
-#analysis$sampleTable <- data.frame(lapply(analysis$sampleTable, as.factor))
-```
+obj <- readRDS(here('rds/obj-post_model_fit.Rds'))
 
+model_results <- readRDS(here('rds/extracted_model_fits.Rds'))
+
+analysis_config <- read_yaml(here('config/analysis_config.yml'))
+```
 
 ## DGE {.tabset}
-
-```{r}
-## one last safety check to make sure metadata and samples are properly associated
-stopifnot(colnames(analysis$dds) == analysis$sampleTable$SampleID)
-
-design(analysis$dds) <- as.formula(paste0("~ ",
-                                          analysis$analysis_config$design))
-analysis$dds <- DESeq(analysis$dds)
-```
-
-```{r extract_results}
-## Make a contrast matrix using Limma
-my_contrasts <- limma::makeContrasts(
-  CelltypeBonemarrow_CD19posCD138pos-CelltypeBonemarrow_CD19negCD138pos,
-  (CelltypeBonemarrow_CD19posCD138pos+CelltypeBonemarrow_CD19posCD138neg)/2 -
-    (CelltypeBonemarrow_CD19negCD138neg-CelltypeBonemarrow_CD19negCD138pos)/2,
-  levels = colnames(model.matrix(design(analysis$dds), colData(analysis$dds))))
-
-## Extract results for one contrast
-DESeq_results <- extractFilteredDESeqResults(analysis$dds, my_contrasts[,1], max_min_samples = 1)
-## Or apply to whole matrix
-DESeq_results <- apply(my_contrasts, 2, extractFilteredDESeqResults, dds = analysis$dds)
-
-## Remame results for easier recall later
-names(DESeq_results) <- c('A_vs_B', 'C_vs_D')
-```
 
 ```{r DGE_table_function}
 ## Can edit this if you want to adjust visualization outputs
 generateDGEDatatable <- function(DESeq_result,
-                                 alpha = analysis$analysis_config$alpha){
+                                 alpha = analysis_config$alpha){
   dge_data <- data.frame(DESeq_result) %>% 
     rownames_to_column('Gene') %>% 
     arrange(pvalue) %>%
@@ -116,9 +85,9 @@ generateDGEDatatable <- function(DESeq_result,
       'Log2 fold change',
       'Fold change std. error', 
       'Adj. p-value'), 
-    caption='DESeq2 output for this comparison, significant genes only',
+    caption='Differential gene expression results for this comparison, significant genes only',
     filter='top',
-    autoHideNavigation = TRUE,
+    # autoHideNavigation = TRUE,
     extensions = c('Buttons', 'Scroller'),
     options = list(
       dom = 'Bfrtip',
@@ -144,46 +113,49 @@ generateGSEADatatable <- function(GSEA_result){
   DT::datatable(gsea_data,
     rownames = FALSE,
     filter='top',
-    autoHideNavigation = TRUE,
+    # autoHideNavigation = TRUE,
     caption='GSEA enrichment results, top from each source') %>%
   formatRound(c('pval','padj','NES'), digits=3)
 }
 ```
 
-### Comparison 1
+## Comparison 1
 
 ```{r}
-summary(DESeq_results$Group_FAC_vs_Cont)
+result <- model_results[[1]]
+summary(result)
 ```
 
 ```{r}
-generateVolcanoPlot(DESeq_results$Group_FAC_vs_Cont)
+generateVolcanoPlot(result)
 ```
 
 ```{r}
-generateDGEDatatable(DESeq_results$Group_FAC_vs_Cont)
+generateDGEDatatable(result)
 ```
 
 ```{r, fig.height=8}
-## This is a complicated example to show functionality. You can normalize the
-## expression to the median of a group of samples using baseline_grouping 
-## and baseline_group arguments, where baseline_grouping is a metadata column
-## and baseline_group is a level of that column. If you just want to use all samples 
-## to calculate median expression, leave one of the baseline arguments as NULL. 
+## You can normalize the expression to the median of a group of samples using normalizeCountsForHeatmap.
+## See the help documentation on normalizeCountsForHeatmapByIndividual for per-sample normalization. 
 ## Column splitting separates samples into blocks based on the column number.
 ## e.g. column split = c(rep(1,3), rep(2,4), rep(3,8)) makes the first block have 
-## 3 samples, the second have 4, and the third have 8. Labels can be provided
-## with slice_labels
-heatmapFromGenelist(geneList = getTopNGenes(DESeq_results$Group_FAC_vs_Cont),
-                    baseline_grouping = 'Group',
-                    baseline = 'Cont',
-                    data = assays(analysis$dds)$rld[,sort(rownames(colData(analysis$dds)))],
+## 3 samples, the second have 4, and the third have 8. 
+## Labels can be provided with slice_labels
+
+data_to_plot <- assays(obj)$rld
+data_to_plot <- normalizeCountsForHeatmapByIndividual(
+  assay(data_to_plot),
+  data_to_plot@colData,
+  group_var = 'Group', baseline = 'Cont', 
+  individual_var = 'Individual',
+  remove_baseline = TRUE)
+
+heatmapFromGenelist(geneList = getTopNGenes(result), 
+                    data = data_to_plot,
                     column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
                     slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
                     slice_labels_rot = 45)
 ```
-
-***
 
 ## Genes of interest
 
@@ -191,20 +163,22 @@ heatmapFromGenelist(geneList = getTopNGenes(DESeq_results$Group_FAC_vs_Cont),
 ## creating an arbitrary genelist
 geneList <- unique(unlist(lapply(results, getTopNGenes, N=10)))
 
-## Pass in a genelist
-heatmapFromGenelist(geneList,
-                    baseline_grouping = 'Group',
-                    baseline = 'Cont',
-                    data = assays(analysis$dds)$rld,
+data_to_plot <- assays(obj)$rld
+data_to_plot <- normalizeCountsForHeatmapByIndividual(
+  assay(data_to_plot),
+  data_to_plot@colData,
+  group_var = 'Group', baseline = 'Cont', 
+  individual_var = 'Individual',
+  remove_baseline = TRUE)
+
+heatmapFromGenelist(geneList = geneList, 
+                    data = data_to_plot,
                     column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
                     slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
                     slice_labels_rot = 45)
 ```
 
-***
-
-## GSEA
-
+# GSEA
 
 ```{r GSEA_setup}
 gmt.file <- list()
@@ -228,7 +202,7 @@ gmt.file <- unstack(bind_rows(m_t2g_reactome,m_t2g_h,m_t2g_biocarta,m_t2g_kegg))
 ##gmt.file <- append(gmt.file, gmtPathways(file.path(a)))
 ```
 
-### individual
+## individual
 
 ```{r, fig.height=10}
 ## run individual results
@@ -241,37 +215,26 @@ gsea_result_1 <- runfgsea(DESeq_results$Group_FAC_vs_Cont,
 gseaDotplot_single(gsea_result_1, signif_only = FALSE, filter_source = 'REACTOME')
 ```
 
-```{r, fig.height=10}
-gsea_result_2 <- runfgsea(DESeq_resultsGroup_LiproxposFAC_vs_Cont,
-                        gmt.file,
-                        minSize = 1,
-                        breakdown_pathway_names = TRUE)
-
-gseaDotplot_single(gsea_result_2, signif_only = FALSE, filter_source = 'REACTOME')
-```
-
-
-### joint
+## joint
 
 ```{r}
-## joint GSEA
+gsea_results <- lapply(model_results.pbmc, runfgsea, pathways=gmt.file, breakdown_pathway_names=TRUE)
+```
+
+```{r}
 combine_GSEA_results <- function(gsea_results,
                                  pathways){
   gsea_results <- lapply(gsea_results, function(x){x %>% filter(pathway %in% pathways)})
   gsea_results <- data.table::rbindlist(gsea_results, idcol='ID')
 }
 
-pathways = c('REACTOME_SIGNALING_BY_GPCR', 'REACTOME_SIGNALING_BY_NTRKS')
-gsea_results <- list('FAC vs Cont' = gsea_result_1, 'LiproxposFAC vs Cont' = gsea_result_2)
+pathways = c('HALLMARK_INTERFERON_ALPHA_RESPONSE', 'HALLMARK_INTERFERON_GAMMA_RESPONSE',
+             'HALLMARK_INFLAMMATORY_RESPONSE', 'HALLMARK_IL6_JAK_STAT3_SIGNALING')
 joint_GSEA_results <- combine_GSEA_results(gsea_results, pathways)
-```
-
-
-```{r}
 gseaDotplot_joint(joint_GSEA_results)
 ```
 
-## Writing results
+# Writing results
 
 ```{r}
 writeDESeqResults(results)
@@ -281,7 +244,7 @@ writeDESeqResults(results)
 writefGSEAResults(gsea_results)
 ```
 
-## Render outfile
+# Render outfile
 
 ```{r}
 rmarkdown::render(here::here('scripts/bulk_rnaseq_analysis_template.format.Rmd'),
