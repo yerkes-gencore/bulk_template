@@ -40,19 +40,18 @@ obj$dds$ind <- factor(plyr::mapvalues(obj$dds$individual,
 ```
 
 ```{r}
-metadata <- as.data.frame(obj$md$sampleTable)
-exp_data <- obj$dge
+metadata <- as.data.frame(obj$dds@colData)
+exp_data <- obj$dds
 plots <- list()
 ```
 
 ```{r}
 metadata %>%
-  select(-c(FileID, ellipse, SampleID, sizeFactor, replaceable))
-  # select(sampleID, SubjectID, grp)
+  select(-c(FileID, SampleID, sizeFactor, replaceable))
 ```
 
 ```{r}
-relevant_cols <- colnames(metadata %>% select(-c(FileID, ellipse, SampleID, sizeFactor, replaceable)))
+relevant_cols <- colnames(metadata %>% select(-c(FileID, SampleID, sizeFactor, replaceable)))
 metadata_summary <- lapply(relevant_cols, function(x) table(unlist((metadata[[x]]))))
 names(metadata_summary) <- relevant_cols
 metadata_summary
@@ -88,14 +87,14 @@ design_matrix
 
 ```{r}
 design(obj$dds) <- design_formula
-stopifnot(colnames(analysis$dds) == analysis$sampleTable$SampleID)
+stopifnot(colnames(exp_data) == metadata$FileID)
 obj$dds <- DESeq2::DESeq(obj$dds)
 ```
 
 ### edgeR
 
 ```{r}
-model_fit <- edgeR::voomLmFit(counts = obj$dge,
+model_results <- edgeR::voomLmFit(counts = obj$dge,
                               design = design_matrix,
                               block = metadata$SubjectID,
                               sample.weights = TRUE)
@@ -177,7 +176,7 @@ contrast_matrix_expanded <- data.frame(
 ```{r}
 ## have to make valid names first
 ## Current workflow requires user to make valid names instead
-# contrast_matrix <- contrast_matrix_expanded
+contrast_matrix <- contrast_matrix_expanded
 # contrast_matrix$denominators <-
 #   sapply(contrast_matrix$denominators, function(x) {
 #     paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
@@ -210,7 +209,7 @@ names(model_results) <- colnames(contrast_matrix)
 
 ```{r}
 ## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
-extracted_contrasts <- contrasts.fit(model_fit, contrasts = contrast_matrix)
+extracted_contrasts <- contrasts.fit(model_results, contrasts = contrast_matrix)
   ## Run empirical Bayes moderation; borrowing information across all the genes to obtain more precise estimates of gene-wise variability
 extracted_contrasts <- eBayes(extracted_contrasts, robust=TRUE)
   ## Plot the model's residual variances against average expression values; demonstrating that the variance is no longer dependent on the mean expression level
@@ -250,7 +249,7 @@ model_results[[1]] %>% head()
 
 ```{r}
 ## Not very generalized yet
-tmp <- data.table::rbindlist(lapply(DESeq_results, function(x) {
+tmp <- data.table::rbindlist(lapply(model_results, function(x) {
   up <- x %>% as.data.frame() %>% filter(log2FoldChange > 0) %>% filter(padj<0.05) %>% nrow()
   down <- x %>% as.data.frame() %>% filter(log2FoldChange < 0) %>% filter(padj<0.05) %>% nrow()
   return(list(up=up, down=down))
@@ -269,8 +268,8 @@ Plot expression boxplots for quick inspections
 
 ```{r}
 plotGeneExpression('JUN',
-                   counts =  model_fit$EList$E,
-                   metadata = model_fit$targets,
+                   counts =  model_results$EList$E,
+                   metadata = model_results$targets,
                    grouping = 'grp.day',
                    subsetting = 'day',
                    subsets = 'D00') 
@@ -280,19 +279,19 @@ You can try to add coefficient terms too to see if they track with your expectat
 
 ```{r}
 plotGeneExpression(gene = 'JUN', 
-               counts = model_fit$EList$E,
-               metadata = model_fit$targets,
+               counts = model_results$EList$E,
+               metadata = model_results$targets,
                grouping = 'grp',
                subsetting = 'day', subsets = 'D28') +
-   plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_fit$coefficients)  
+   plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_results$coefficients)  
 ## Or you can return the data for manual plotting
-arrow_coords <- plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_fit$coefficients, data_only = TRUE)  
+arrow_coords <- plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_results$coefficients, data_only = TRUE)  
 ## Can edit values here if desired, such as X coordinates
 ## arrow_coords$x = 0.5
 
 plotGeneExpression(gene = 'JUN', 
-               counts = model_fit$EList$E,
-               metadata = model_fit$targets,
+               counts = model_results$EList$E,
+               metadata = model_results$targets,
                grouping = 'grp',
                subsetting = 'day', subsets = 'D28') +
   ## Then manually create the arrows
@@ -321,6 +320,6 @@ rmarkdown::render(here::here('scripts/model_validation.format.Rmd'),
 ```{r}
 saveRDS(obj$dds, here('rds/obj-post_model_fit.Rds'))
 
-saveRDS(model_results, here('rds/extracted_model_fits.Rds'))
+saveRDS(model_results, here('rds/extracted_model_results.Rds'))
 ```
 

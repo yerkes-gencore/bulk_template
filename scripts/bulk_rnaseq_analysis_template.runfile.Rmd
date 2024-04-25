@@ -237,7 +237,7 @@ gseaDotplot_joint(joint_GSEA_results)
 # Writing results
 
 ```{r}
-writeDESeqResults(results)
+writeDESeqResults(model_results)
 ```
 
 ```{r}

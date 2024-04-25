@@ -53,7 +53,7 @@ These heatmaps show the relative expression (regularized and log2 transformed) o
 
 ```{r, fig.height=10}
 ## creating an arbitrary genelist
-geneList <- unique(unlist(lapply(results, getTopNGenes, N=10)))
+geneList <- unique(unlist(lapply(model_results, getTopNGenes, N=10)))
 
 ## Pass in a genelist
 data_to_plot <- assays(obj)$rld
