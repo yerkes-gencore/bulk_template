@@ -587,7 +587,7 @@ bulk_CBs %>%
 ## 1 - Define FDR threshold
 
 ```{r}
-fdr <- 0.5
+fdr <- 0.05
 ```
 
 ## 2 - Define contrasts
