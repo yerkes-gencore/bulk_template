@@ -31,6 +31,14 @@ details > summary {
 </style>
 ```
 
+The report is organized into three parts:
+
+1. Quality Control (data input, filtering by expression, PCA plotting and exporting counts table)
+2. Differential Expression (defining design formula and contrasts, running diagnostics and generating DEG plots and summaries) and 
+3. Gene Set Enrichment Analysis (against various different gene set lists).
+ 
+Please note that this `.html` file is best viewed when downloaded to your local machine and viewed in your internet browser (i.e. not on OneDrive). There is a table of contents on the left-hand side and some sections in the report include clickable tabs to organize the results. These will not show up if viewed on OneDrive.
+
 # Part 1 - QC
 
 In Part 1 of this report, we walk through the results of running a quality control analysis on the provided data.
