@@ -44,7 +44,7 @@ If you haven't discussed the study design and goals with the clients much yet, y
 
 The `## Report metadata` section controls the name of the report. When iterating reports, you could start with `report_number <- "01"` for the initial report and `report_number <- "02"` for the full QC + DE + GSEA report, for example. If you are simply fixing typos or adding a minor set of plots using the same base dataset, you could keep the report number the same and rely on the report timestamp in the filename to communicate the version. If the project includes several independent datasets that progress through the same steps (e.g. report "01-QC", "02-QC+DE+GSEA"), you could add a label to the report number to reflect this while preserving the progression of the analysis in the number (e.g. "thai_01-QC", "thai_02-QC+DE+GSEA", "atl_01-QC", "atl_02-QC+DE+GSEA"). This is at least what worked well for the `p23181_Abbie`, on which this template is based.
 
-Note that the example dataset here is a cross-sectional study with several contrast of interest, but this script . Just uncomment the code chunk section 4.2.
+Note that the example dataset here is a cross-sectional study with several contrasts of interest, but this script can be adjusted to better handle projects with a single contrast. Just uncomment the code chunk section 4.2.
 
 ## Report metadata
 
