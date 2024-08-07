@@ -119,7 +119,8 @@ ggplotMDS <- function(dge, sampleID = "sampleID", gene.selection = "common",
 ## Part 2:
 fitVoomLm <- function(bulkObj, design = bulk$md$design, contr.matrix, 
                       block = NULL, sample.weights = TRUE, 
-                      var.design = NULL, var.group = NULL, plotVoom = TRUE) {
+                      var.design = NULL, var.group = NULL, plotVoom = TRUE,
+                      ebayes_fun = "eBayes", fc = 1.2) {
     bulkObj$fit <- edgeR::voomLmFit(counts = bulkObj$dge, # Defaults to the normalized (effective) library sizes in counts if counts is a DGEList or to the columnwise count totals if counts is a matrix.
                                     design = design,
                                     block = block,
@@ -128,10 +129,33 @@ fitVoomLm <- function(bulkObj, design = bulk$md$design, contr.matrix,
                                     var.group = var.group,
                                     plot = plotVoom)
   bulkObj$fit.contr <- limma::contrasts.fit(bulkObj$fit, contrasts = contr.matrix)
-  bulkObj$fit.contr <- limma::eBayes(bulkObj$fit.contr, robust=TRUE)
+  if (ebayes_fun == "eBayes") {
+    bulkObj$fit.contr <- limma::eBayes(bulkObj$fit.contr, robust=TRUE)
+  } else if (ebayes_fun == "treat") {
+    bulkObj$fit.contr <- limma::treat(bulkObj$fit.contr, fc = fc, robust=TRUE)
+  }
   limma::plotSA(bulkObj$fit.contr, main="Final model: Mean-variance trend")
-  bulkObj$de <- limma::decideTests(bulkObj$fit.contr, lfc = 0)
   return(bulkObj)
+}
+
+createResTable <- function (fit, contr.matrix, ebayes_fun = "eBayes") {
+    resultsTables_list <- list()
+    for (contrast in colnames(fit$coefficients)) {
+      if (ebayes_fun == "eBayes") {
+        resultsTables_list[[contrast]] <- limma::topTable(fit, 
+            coef = contrast, n = Inf) %>% dplyr::rename(log2FoldChange = .data$logFC, 
+            pvalue = .data$P.Value, padj = .data$adj.P.Val)
+      } else if (ebayes_fun == "treat") {
+        resultsTables_list[[contrast]] <- limma::topTreat(fit, 
+            coef = contrast, n = Inf) %>% dplyr::rename(log2FoldChange = .data$logFC, 
+            pvalue = .data$P.Value, padj = .data$adj.P.Val)
+      }
+    }
+    resultsTable <- lapply(resultsTables_list, function(one_tbl) {
+        one_tbl %>% tibble::rownames_to_column(var = "gene")
+    }) %>% dplyr::bind_rows(.id = "contrast") %>% dplyr::as_tibble() %>% 
+        dplyr::mutate(contrast = forcats::fct(contrast, levels = colnames(contr.matrix)))
+    return(resultsTable)
 }
 ```
 
@@ -717,9 +741,9 @@ resultsTable <- resultsTable %>%
 n_deg_summary <- resultsTable %>% 
   group_by(contrast) %>%
     dplyr::rename(l2fc = log2FoldChange, pBH = padj) %>%
-    summarize(signif_down = sum(qvalue < fdr & l2fc < 0),
-              nonsignif = sum(qvalue >= fdr),
-              signif_up = sum(qvalue < fdr & l2fc > 0)) %>%
+    summarize(signif_down = sum(pBH < fdr & l2fc < 0),
+              nonsignif = sum(pBH >= fdr),
+              signif_up = sum(pBH < fdr & l2fc > 0)) %>%
   mutate(signif = signif_up + signif_down)
 ```
 
