@@ -48,3 +48,9 @@ vignettes/*.pdf
 
 # Mac
 .DS_Store
+
+# NFS
+.nfs*
+
+# VSCode
+settings.json
