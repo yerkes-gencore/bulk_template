@@ -51,3 +51,6 @@ vignettes/*.pdf
 
 # NFS
 .nfs*
+
+# VSCode
+settings.json
