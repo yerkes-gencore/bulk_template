@@ -1005,7 +1005,7 @@ n_pathways <- 30
 
 ### Render
 ```{r}
-rmarkdown::render(input = here("scripts/01-limmaEdgeR-QC+DE+GSEA-format.Rmd"),
+rmarkdown::render(input = here("scripts/01-limmaEdgeR-cross-QC+DE+GSEA.format.Rmd"),
                   output_file = report_filename,
                   output_dir = here('reports'))
 ```
