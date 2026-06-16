@@ -1,0 +1,601 @@
+---
+title: "01-bulkRNA_QC.runfile"
+author: "ENPRC Genomics Core"
+date:  "`r Sys.Date()`"
+output:
+  pdf_document:
+    df_print: kable
+  html_document: default
+---
+
+```{r setup, include=FALSE, eval = FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+
+## packages
+# analysis
+library(DESeq2) # note: in r 4.3.1, if other packages are loading in environment I get error: 'Package ‘GenomeInfoDb’ version 1.38.1 cannot be unloaded'
+library(limma)
+library(edgeR)
+library(msigdbr)
+library(fgsea)
+library(gencoreBulk)
+
+# functional
+library(tidyverse)
+library(readr)
+library(readxl)
+library(yaml)
+library(dplyr)
+library(here)
+library(tinytex) # required for PDF output
+library(rmdformats) # required for HTML output
+library(kableExtra)
+
+# plotting
+library(ggtext)
+library(ggforce)
+library(ggpubr)
+library(ggplotify)
+library(ggh4x)
+library(patchwork)
+library(plotly)
+
+## custom functions
+source(here("R/limmaEdgeR_functions.R")) 
+source(here("R/heatmap_functions.R"))
+source(here("R/QC_functions.R"))
+
+# I personally like to see my month name, even if it isn't ISO compliant
+getDate <- function() {
+  format(Sys.Date(), "%Y%b%d")
+}
+```
+
+# Explanation of report workflow
+
+This runfile is where we can run all the code required for the analysis, which will populate our environment with objects used in the format file. We typically run as much of the more heavier computation in the runfile as possible so that it doesn't take long to render the format file, since we may need to render iteratively as we adjust the format, fix typos, write explanatory notes, or add report sections.
+
+# Resources
+## Choosing a model design
+https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html
+
+## Filtering data with EdgeR
+https://www.bioconductor.org/packages/devel/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf (page 14)
+
+# Part 0 - Set-up 
+*Run set-up steps manually*
+*Edit `config/QC_config.yml` before running script*
+
+note: I don't love using the yml files
+
+## 0.1 - Initiate `bulk` object
+This object will hold project metadata, sample metadata, counts tables, and model fits
+Do this ONCE per project, to avoid overwriting your object!
+
+```{r init bulk object, eval=FALSE}
+################################################################################
+### Initiate `bulk` object
+################################################################################
+bulk <- list()
+bulk$tables$limma <- list()
+bulk$tables$deseq <- list()
+bulk$plots$limma <- list()
+bulk$plots$deseq <- list()
+bulk$config <- list()
+
+################################################################################
+### Project data and directories
+################################################################################
+## Name of project
+bulk$config$project <- 'dev'
+
+## Analyst name
+bulk$config$author <- 'Rachel Dockman'
+
+## Directory with STAR genome reference 
+bulk$config$refDir <- '/yerkes-cifs/runs/Genome_references/macaca_mulatta/t2t/star_index_T2T/'
+
+## Directory with project output from STAR
+bulk$config$alignDir <- '/yerkes-cifs/runs/Analysis/2025_Analyses/c25001_AMARR51PAX/c25001_AMARR51PAX_Processing/S2.7.9a_T2T-ncbi/'
+
+## Is the library 'unstranded' or 'stranded'
+bulk$config$libType <- 'unstranded'
+```
+
+## 0.2 - Experimental config
+These are variables that may be called to streamline runfile automation and ideally, require no changes to the template file prior to knitting. I am still working on integrating this info and testing if it is generalizable enough for diverse experimental conditions.
+
+```{r config, eval=FALSE}
+################################################################################
+### Experimental design info
+################################################################################
+## Store whether your analysis is longitudinal/repeated
+### These logicals will be used for automated format generation
+bulk$config$longitudinal <- TRUE
+
+## If longitudinal, set your timepoints
+### the goal of this is to ensure plots are in the correct order 
+bulk$config$timeVar <- c(
+  'tPt_00' = 'Day00',
+  'tPt_01' = 'Day01',
+  'tPt_02' = 'Day02',
+  'tPt_03' = 'Day04',
+  'tPt_04' = 'Day07',
+  'tPt_05' = 'Day14'
+)
+#  'tPt_06' = '48hr'
+#  'tPt_07' = 'wk3'
+#  'tPt_08' = 'exp2'
+#  'tPt_09' = '___'
+```
+
+## 0.3 - Sample metadata
+Personally, I prefer to modify a csv file in Excel to contain the desired columns with proper formatting rather than parsing through the manifest file provided by the investigator.
+
+You must have columns `fileID`, `sampleID`, and `group` to run this template as-is.
+For longitudinal/repeated measures, you also need columns `subjectID` and `tPt`
+
+Example:
+
+|    fileID     |  sampleID   |  grp  | subjectID* | tPt*  |  grp.tPt*  | otherAsNeeded |
+|---------------|-------------|-------|------------|-------|------------|---------------|
+|c25001-s001_...| REu20-Day-0 | mRNA  | REu20      | Day00 | mRNA.Day00 |rhesus/male/etc|
+
+```{r import metadata, eval=FALSE}
+meta <- read.csv(here("notes/metadata.csv"))
+
+if(bulk$config$longitudinal==TRUE){
+# generate grp.tPt
+  meta$grp.tPt <- paste(meta$grp, meta$tPt, sep = ".")
+}
+
+# add meta to bulk object  
+bulk$md$sampleTable <- meta
+```
+
+# Part 1 - Import data
+
+## 1.1 - Read in STAR output and create DGEList object
+Requires your metadata to have the correct fileID!
+
+```{r import counts}
+## Assemble full path of each read file
+bulk$md$sampleTable$readPath <- 
+  here(bulk$config$alignDir, bulk$md$sampleTable$fileID, 
+       paste0(bulk$md$sampleTable$fileID, "_ReadsPerGene.out.tab"))
+
+## Parse the read files and save mapping stats
+counts_tmp <- parseReadPerGeneFiles(
+  file.paths = setNames(bulk$md$sampleTable$readPath, 
+                        nm = bulk$md$sampleTable$sampleID), 
+  library.type = bulk$config$libType)
+bulk$md$mapBins <- counts_tmp$map_bins
+
+## Create DGElist 
+### The "group" you assign will be used throughout for modeling and plotting
+if(bulk$config$longitudinal==TRUE){
+  bulk$dge <- DGEList(counts = counts_tmp$read_counts, 
+                      samples = bulk$md$sampleTable, 
+                      group = bulk$md$sampleTable$grp.tPt)
+} else {
+  bulk$dge <- DGEList(counts = counts_tmp$read_counts, 
+                      samples = bulk$md$sampleTable, 
+                      group = bulk$md$sampleTable$grp)
+}
+
+## Summarize sample data for report
+bulk$tables$sampleSummary <- bulk$dge$samples %>%
+    select(fileID, sampleID, subjectID, group) %>%
+    dplyr::group_by(group) %>%
+    dplyr::summarize(subjectIDs = paste0(subjectID, collapse = ", "),
+                     n_subjects = n()) %>%
+    as.data.frame()
+
+rm(counts_tmp)
+
+## Compute and normalize library sizes 
+bulk$dge$samples$lib.size <- colSums(bulk$dge$counts)
+bulk$dge <- normLibSizes(bulk$dge)
+bulk$dge$cpm <- cpm(bulk$dge$counts)
+bulk$dge$lcpm <- cpm(bulk$dge$counts, log = TRUE)
+```
+
+## 1.2 Assign gene symbols from reference gtf as gene IDs
+Note: obtaining these names seems only relevant if you are using an Ensembl reference
+```{r assign gene symbols}
+## STAR output may use Ensembl IDs as gene IDs, in which case, use gtf to assign gene symbols where possible
+geneInfoTab <- read_tsv(here(bulk$config$refDir, "geneInfo.tab"),
+                        skip = 1,
+                        col_names = c("gene_id","gene_symbol","gene_type"),
+                        show_col_types = FALSE)
+
+## Remove samples if there are fewer total fragment counts than features
+lowcounts <- colSums(bulk$dge$counts) < nrow(geneInfoTab)
+stopifnot(!sum(lowcounts)>0)
+
+gene_names <- plyr::mapvalues(rownames(bulk$dge$counts), 
+                              from = geneInfoTab$gene_id,
+                              to = geneInfoTab$gene_symbol)
+
+## Save original names and unfiltered data
+bulk$prefilt_dge <- bulk$dge
+
+## Names are made unique IF you used Ensembl; NCBI reference should already have unique names
+rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
+```
+
+## 1.3 - Add design to `bulk` object
+By default, this template uses `grp` for cross-sectional studies and `grp.tPt` for longitudinal studies.
+
+This is based on what you set your `group` to be when you made the DGElist
+
+Default may not work for your project. Modify as needed.
+
+```{r set design}
+bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
+```
+
+# 2 - Filter data
+Filter based on the grouping factors or treatment factors involved in differential expression testing
+
+## 2.1 - Plot initial mapping stats
+```{r mapping_plot, fig.width=10, fig.height=8}
+# save mapping stats plot
+bulk$plots$qc$pMapBins <- mappingBinsPlot(bulk$md$mapBins) +
+  ggtitle("Reads mapped to reference") +
+  theme(axis.text.x = element_text(hjust = 1, size = 8),
+        plot.title = element_text(face = "bold", size = 20),
+        legend.title = element_text(face = "bold", size = 12)) +
+  guides(fill = guide_legend(direction = "horizontal",
+                            # position = "bottom", # useless until we update R version
+                             title.position = "top")) 
+
+# view plot
+ggarrange(bulk$plots$qc$pMapBins, legend = "bottom")
+```
+
+## 2.2 - Filter by expression
+```{r prep filter count tab}
+## If `design = bulk$md$design` includes nuisance variables, replace with `group = {factor of biological interest}`
+bulk$md$keep.exprs <- filterByExpr(bulk$prefilt_dge, design = bulk$md$design)
+```
+
+### 2.3 - Generate plots for filtering parameters
+Note: I chose to use `bulk$prefilt_dge$counts` instead of `bulk$dge$counts` for easier reproducibility when coming back to this script to regenerate plots
+
+```{r make filtering plots}
+## gene filtering
+bulk$plots$qc$pGeneFilt <- bulk$prefilt_dge$counts %>%
+  dplyr::as_tibble(rownames = "gene") %>%
+  dplyr::left_join(dplyr::tibble(gene = names(bulk$md$keep.exprs), keep = bulk$md$keep.exprs), 
+                   by = c("gene")) %>%
+  tidyr::pivot_longer(cols = -c("gene", "keep"), 
+                      names_to = "sampleID", 
+                      values_to = "counts") %>%
+  dplyr::mutate(sampleID = forcats::fct(.data$sampleID, 
+                                        levels = levels(bulk$prefilt_dge$samples$sampleID)),
+                is_zero = .data$counts == 0) %>%
+  dplyr::group_by(.data$sampleID) %>%
+  dplyr::summarize(keep_zero = sum(.data$is_zero & .data$keep),
+                   keep_nonzero = sum(!.data$is_zero & .data$keep),
+                   remove_zero = sum(.data$is_zero & !.data$keep),
+                   remove_nonzero = sum(!.data$is_zero & !.data$keep)) %>%
+  dplyr::ungroup() %>%
+  tidyr::pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), 
+                      names_to = "cat", 
+                      values_to = "n_genes") %>%
+  dplyr::mutate(cat = forcats::fct(.data$cat, 
+                                   levels = rev(c("keep_nonzero", 
+                                                  "keep_zero", 
+                                                  "remove_nonzero", 
+                                                  "remove_zero")))) %>%
+  ggplot(aes(x = .data$sampleID, y = .data$n_genes, fill = .data$cat)) +
+  theme_bw() +
+  geom_bar(stat="identity") +
+  scale_fill_manual(name = NULL,
+                    values = c("keep_nonzero"="#209964", "keep_zero"="#C4B31C",
+                               "remove_nonzero"="#DB890E", "remove_zero"="#C60A19"),
+                    breaks = c("keep_nonzero", "keep_zero",
+                               "remove_nonzero", "remove_zero"),
+                    labels = c("Kept; reads >0", "Kept; reads =0",
+                               "Removed; reads >0", "Removed; reads =0")) +
+  ylab("Gene counts") + 
+  xlab(NULL) +
+  ggtitle("Genes filtered by expression level") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6),
+        plot.title = element_text(face = "bold", size = 20),
+        axis.title.y = element_text(face = "bold"),
+        legend.text = element_text(size = 12))
+
+  
+## library size plot
+bulk$plots$qc$pLibSize <- bulk$prefilt_dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  dplyr::left_join(tibble(gene = names(bulk$md$keep.exprs), keep = bulk$md$keep.exprs), 
+            by = c("gene")) %>%
+  tidyr::pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+  dplyr::mutate(sampleID = fct(sampleID, levels = levels(bulk$prefilt_dge$samples$sampleID))) %>%
+  dplyr::group_by(sampleID, keep) %>%
+    dplyr::summarize(lib.size = sum(counts)) %>%
+  ungroup() %>%
+  ggplot(aes(x = sampleID, y = lib.size, fill = keep)) +
+  theme_bw() +
+  geom_bar(stat="identity") +
+  scale_fill_manual(name = NULL,
+                    values = c("TRUE" = "#209964","FALSE" = "#C60A19"),
+                    breaks = c("TRUE", "FALSE"),
+                    labels = c("Reads kept", "Reads removed")) +
+  ylab("Library size") + 
+  xlab(NULL) +
+  ggtitle("Library size after gene filtering") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6),
+        plot.title = element_text(face = "bold", size = 20),
+        axis.title.y = element_text(face = "bold"),
+        legend.text = element_text(size = 12))
+
+## log library size plot
+bulk$plots$qc$pLogLibSize <- bulk$plots$qc$pLibSize +
+  scale_y_log10() +
+  ylab("log10(Library size)") +
+  ggtitle("Log library size after gene filtering") 
+```
+
+### 2.3.2 - View filtering and library size plots
+```{r plot filtering plots, fig.height=5, fig.width=12}
+ggarrange(bulk$plots$qc$pGeneFilt, legend = "bottom")
+ggarrange(bulk$plots$qc$pLibSize, legend = "bottom")
+ggarrange(bulk$plots$qc$pLogLibSize, legend = "bottom")
+```
+
+## 2.4 - Check globin expression
+As a quality check, this section pulls out globin-related genes to check for contamination
+```{r check globin}
+## globin dataframe
+bulk$plots$qc$pGlobinBars <- bulk$dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  dplyr::mutate(globin = factor(gene %in% c("HBE1","HBA","B2M"), 
+                                levels = c("TRUE","FALSE"))) %>%
+  dplyr::mutate(globin = recode(globin, 
+                                "TRUE" = "globin", "FALSE" = "not_globin")) %>%
+  pivot_longer(cols = -c(gene, globin), 
+               names_to = "sampleID", 
+               values_to = "counts") %>%
+  mutate(sampleID = fct(sampleID, levels = levels(bulk$dge$samples$sampleID))) %>%
+  group_by(sampleID, globin) %>%
+  dplyr::summarize(lib.size = sum(counts)) %>%
+  ungroup() %>%
+  ggplot(aes(x = sampleID, y = lib.size, fill = globin)) +
+  geom_bar(stat="identity") +
+  ylab("Library size (sum of counts)") + xlab("Sample ID") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6))
+
+## violin plot of percent globin
+bulk$plots$qc$pGlobinVln <- bulk$dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  dplyr::mutate(globin = factor(gene %in% c("HBE1","HBA","B2M"), 
+                                levels = c("TRUE","FALSE"))) %>%
+  dplyr::mutate(globin = recode(globin, 
+                                "TRUE" = "globin", "FALSE" = "not_globin")) %>%
+  pivot_longer(cols = -c(gene, globin), 
+               names_to = "sampleID", 
+               values_to = "counts") %>%
+  mutate(sampleID = fct(sampleID, levels = levels(bulk$dge$samples$sampleID))) %>%
+  group_by(sampleID, globin) %>%
+  dplyr::summarize(lib.size = sum(counts)) %>%
+  ungroup() %>%
+  pivot_wider(id_cols = c(sampleID),
+              names_from = globin, 
+              values_from = lib.size) %>%
+  mutate(globinPct = globin/(globin+not_globin)) %>% 
+  ggplot(aes(x=1,y=globinPct)) +
+  geom_violin(fill = NA) + 
+  geom_sina() + 
+  theme_bw()
+```
+
+### 2.4.1 - Plot globin expression
+```{r plot globin, fig.height=6, fig.width=16}
+bulk$plots$qc$pGlobinBars
+bulk$plots$qc$pGlobinVln
+```
+
+## 2.5 - Apply the filter
+```{r filter dge object}
+## Apply the filter
+bulk$dge <- bulk$dge[bulk$md$keep.exprs, , keep.lib.sizes=FALSE]
+
+## Recalculate library size, norm factors, cpm and lcpm
+bulk$dge$samples$lib.size <- colSums(bulk$dge$counts)
+bulk$dge <- normLibSizes(bulk$dge)
+bulk$dge$cpm <- cpm(bulk$dge$counts)
+bulk$dge$lcpm <- cpm(bulk$dge$counts, log = TRUE)
+```
+
+# 3 - Ordination
+
+limma::plotMDS chooses `x_genes` of the most variable genes to generate distance matrices for ordination.
+If `x_genes` are chosen based on all samples, then a PCA plot is created (`gene.selection = "common"`)
+If `x_genes` are chosen from pairwise comparisons of all samples, then a PCoA plot is created (`gene.selection = "pairwise"`)
+
+## 3.1 - PCA
+
+```{r PCA, fig.width=8, fig.height=8}
+## we will be pulling out the first 4 Principal Components (PCs)
+dims_list <- list("1v2"=c(1,2), "2v3"=c(2,3), "3v4"=c(3,4))
+
+## generate PCA plots
+bulk$plots$qc$pPCA <- lapply(dims_list, function(dims) {
+  ggplotMDS(bulk$dge, dims = dims, 
+            group = "grp", 
+            gene.selection = "common", 
+            show.labels = FALSE,
+            sampleID = "sampleID", 
+            color = "grp", 
+            shape = if(bulk$config$longitudinal==TRUE){"tPt"}else{NULL}, 
+            path = "subjectID", 
+            alpha = 1) +
+    scale_color_brewer(palette = "Set1")
+})
+
+## find genes associated with PCs 1 & 2
+pca12_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
+                             gene.selection = "common", dim.plot = c(1,2))
+pca12_design <- cbind(Intercept=1,xaxis=pca12_data$x,yaxis=pca12_data$y)
+pca12_fit <- edgeR::voomLmFit(bulk$dge, design = pca12_design)
+pca12_fit <- limma::eBayes(pca12_fit)
+bulk$tables$pc1_degs <- limma::topTable(pca12_fit, coef="xaxis", number = 10)
+bulk$tables$pc2_degs <- limma::topTable(pca12_fit, coef="yaxis", number = 10)
+
+## find genes associated with PCs 3 & 4
+pca34_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
+                             gene.selection = "common", dim.plot = c(1,2))
+pca34_design <- cbind(Intercept=1,xaxis=pca34_data$x,yaxis=pca34_data$y)
+pca34_fit <- edgeR::voomLmFit(bulk$dge, design = pca34_design)
+pca34_fit <- limma::eBayes(pca34_fit)
+bulk$tables$pc3_degs <- limma::topTable(pca34_fit, coef="xaxis", number = 10)
+bulk$tables$pc4_degs <- limma::topTable(pca34_fit, coef="yaxis", number = 10)
+
+## plot PCAs
+bulk$plots$qc$pPCA
+```
+
+## 3.2 - PCoA
+
+```{r PCoA, fig.width=8, fig.height=8}
+## Generate plots
+bulk$plots$qc$pPCoA <- lapply(dims_list, function(dims) {
+  ggplotMDS(bulk$dge, dims = dims, 
+            group = "grp", 
+            gene.selection = "pairwise", 
+            show.labels = FALSE,
+            sampleID = "sampleID", 
+            color = "grp", 
+            shape = if(bulk$config$longitudinal==TRUE){"tPt"}else{NULL}, 
+            path = "subjectID", 
+            alpha = 1) +
+    scale_color_brewer(palette = "Set1")
+})
+
+## find genes associated with PCs 1 & 2
+pcoa12_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
+                             gene.selection = "pairwise", dim.plot = c(1,2))
+pcoa12_design <- cbind(Intercept=1,xaxis=pcoa12_data$x,yaxis=pcoa12_data$y)
+pcoa12_fit <- edgeR::voomLmFit(bulk$dge, design = pcoa12_design)
+pcoa12_fit <- limma::eBayes(pcoa12_fit)
+bulk$tables$pcoa1_degs <- limma::topTable(pcoa12_fit, coef="xaxis", number = 10)
+bulk$tables$pcoa2_degs <- limma::topTable(pcoa12_fit, coef="yaxis", number = 10)
+
+## find genes associated with PCs 3 & 4
+pcoa34_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
+                             gene.selection = "pairwise", dim.plot = c(1,2))
+pcoa34_design <- cbind(Intercept=1,xaxis=pcoa34_data$x,yaxis=pcoa34_data$y)
+pcoa34_fit <- edgeR::voomLmFit(bulk$dge, design = pcoa34_design)
+pcoa34_fit <- limma::eBayes(pcoa34_fit)
+bulk$tables$pcoa3_degs <- limma::topTable(pcoa34_fit, coef="xaxis", number = 10)
+bulk$tables$pcoa4_degs <- limma::topTable(pcoa34_fit, coef="yaxis", number = 10)
+
+## plot PCoAs
+bulk$plots$qc$pPCoA 
+```
+
+# 4 - DESeq2
+
+While the QC steps above were generated with limma/EdgeR, it is a good idea to compare multiple DE analysis tools.
+Note: DESeq2 may not handle longitudinal data as well as limma/EdgeR
+Luckily, the same models and contrasts can be used in both DE methods
+
+```{r DESeq2}
+## prep object
+bulk$deseq$dds.data <- DESeqDataSetFromMatrix(countData = bulk$dge$counts,
+                                              colData = bulk$dge$samples,
+                                              design = bulk$md$design)
+
+## data transformation
+#bulk$deseq$rld <- rlog(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric") # slow
+bulk$deseq$vst <- vst(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric")
+bulk$deseq$dds.data <- estimateSizeFactors(bulk$deseq$dds.data) # Add scaling factor
+bulk$deseq$normCounts <- counts(bulk$deseq$dds.data, normalized = TRUE)
+
+## run DESeq2
+bulk$deseq$dds <- DESeq(bulk$deseq$dds.data)
+```
+
+## 4.1 - Compare normalization results
+```{r RLE, warning=FALSE}
+bulk$plots$qc$pLimmaRLE <- checkRLEv2(bulk, DEmethod = "limma")
+bulk$plots$qc$pDESeqRLE <- checkRLEv2(bulk, DEmethod = "DESeq2")
+bulk$plots$qc$pLimmaRLE
+bulk$plots$qc$pDESeqRLE
+```
+
+# 5 - Export count table and write bulk object rds
+
+## 5.1 - Create a subdir name and keep it consistent across dirs
+
+```{r prep for export}
+## initiate report count (or increase by 1)
+rn <- bulk$config$reportNumber
+if(is.null(rn)){
+  bulk$config$reportNumber <- "01"
+} else {
+  bulk$config$reportNumber <- sprintf("%02d", as.numeric(bulk$config$reportNumber) + 1)  
+  }
+
+## make subdirectories for `outputs` and `rds`
+subdir <- paste0("report-", bulk$config$reportNumber)
+
+if (!dir.exists(here("outputs/", subdir))) {
+  dir.create(here("outputs/", subdir))}
+
+if (!dir.exists(here("rds/", subdir))) {
+  dir.create(here("rds/", subdir))}
+```
+
+## 5.2 - Export count table
+```{r}
+# Filtered count table
+bulk$dge$counts %>% 
+  as_tibble(rownames = "gene") %>%
+  write_csv(., here("outputs/", subdir, paste0("counts-", getDate(), ".csv")))
+
+# Unfiltered count table
+bulk$prefilt_dge$counts  %>% 
+  as_tibble(rownames = "gene") %>%
+  write_csv(., here("outputs/", subdir, paste0("rawCounts-", getDate(), ".csv")))
+```
+
+## 5.3 - Write `bulk` rds
+```{r}
+bulk %>%
+  write_rds(., here("rds", subdir, paste0("QC_bulk-", getDate(), ".rds")))
+```
+
+# 6 - Render report
+## 6.1 - Report name
+```{r render}
+report_filename <- paste0(bulk$config$project, "-", 
+                          bulk$config$reportNumber, "-",
+                          format(Sys.Date(), "%Y%b%d"))
+```
+
+## 6.2 - HTML
+```{r renderHTML}
+rmarkdown::render(input = here("scripts/01-bulkRNA_QC.format.Rmd"),
+                  output_file = paste0(report_filename, ".html"),
+                  output_dir = here('reports'),
+                  output_format = "rmdformats::robobook")
+```
+
+## 6.3 - PDF
+```{r renderPDF}
+tinytex::install_tinytex() # If it is already installed, will ask in terminal if you should reinstall
+rmarkdown::render(input = here("scripts/01-bulkRNA_QC.format.Rmd"),
+                  output_file = paste0(report_filename, ".pdf"),
+                  output_dir = here('reports'),
+                  output_format = "pdf_document")
+```

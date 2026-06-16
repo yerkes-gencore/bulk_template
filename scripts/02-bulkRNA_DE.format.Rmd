@@ -1,0 +1,276 @@
+---
+title: "`r bulk$config$project`: Report `r bulk$config$reportNumber` - DE"
+author: |
+  | `r bulk$config$author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    df_print: kable
+    latex_engine: lualatex
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+always_allow_html: true
+params:
+  method: "deseq"
+  compare: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+evalMethod <- ifelse(params$compare == TRUE,FALSE,TRUE)
+methodName <- ifelse(params$method == "deseq", "DESeq2", "limma/EdgeR")
+```
+
+```{=html}
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+details > summary {
+  display: list-item;
+}
+</style>
+```
+
+```{r template overview, eval=FALSE}
+# Overview of Format File
+## Format Mode
+This file has three modes, which you choose when you render the report.
+
+To compare DESeq2 and limma results, set `compare=TRUE` in the render command.
+
+            rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                              output_file = report_filename,
+                              output_dir = here('reports'),
+                              params = list(compare = TRUE))
+
+To prepare only DESeq2 or limma results, set 'method' to "deseq" or "limma"
+
+            rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                              output_file = report_filename,
+                              output_dir = here('reports'),
+                              params = list(method = "deseq")) 
+                                 # or
+                              params = list(method = "limma")) 
+  
+## Use of Knitting
+You will notice that this file has several chunks with large amounts of text. If you are unfamiliar (like I was!), here is a quick explanation of how this works.
+Basically, you take a typical markdown chunk and store each line as a string within a vector. When you call cat(knitr::knit_child()), this forms the text into proper chunks that then render into a normal report.
+This method allows us to use eval=params$__ in chunk headers as a way to knit together desired pieces of the runfile, based on your needs.
+
+If you modify this file and come into issues, here are some things to check:
+   Did you make sure every line ends with '\n'? 
+   Is every piece of text to be knit together properly quoted and separated by a comma?
+   Did you make sure to use results='asis' in the chunk header that holds the knit text?
+```
+
+# Project sample table
+Here is the sample table used in this report. The column `group` was used to differentiate between samples for the following analyses
+
+```{r meta table, message=FALSE, warning=FALSE}
+bulk$tables$sampleSummary %>%
+  knitr::kable(caption = "Study Design", format = "simple")
+```
+
+```{r, eval=bulk[["config"]][["longitudinal"]], results='asis'}
+cat("Since this is a longitudinal study, our model included these timepoints: \n\n", paste0(bulk[["config"]][["timeVar"]], collapse = ", "), "\n")
+```
+
+# Contrasts for differential gene expression
+We prepared a number of contrasts for this project to obtain DEGs between groups of interest. The model we selected is **'expression ~ 0 + group'**. These are the contrasts between the groups that were computed for this report:
+```{r Display Contrasts}
+cat(getSourceText(contrastFunction,2,2))
+```
+
+```{r chunktextOneMethod, eval=evalMethod}
+summaryChunk <- c(
+  '# Differentially expressed genes (DEGs) \n\n',
+  'We used `r methodName` to identify DEGs between the groups listed in the contrasts above, with the DEGs summarized here. Enriched genes in one group are depleted in the other (and vice versa), so you look at the order of the groups within the contrast name to determine which group is "up" or "down". Generally, the contrast names are "UpGroup"vs"DownGroup".\n',
+  '## DEGs per Contrast \n',
+  '```{r, fig.width = 6, fig.height = 6}',
+  'bulk$plots[[params$method]]$pDEGSummaryBars',
+    '```\n')
+
+volcanoChunk <- c(
+  '# Volcano plots \n\n',
+  'Volcano plots display -log10(padj) on the y-axis and log2FoldChange on the x-axis, showing the distribution of significantly different genes between the contrasts tested.\n',
+  '## Static volcano plots (all contrasts) \n',
+  '```{r, fig.width = 12, fig.height = 14} \n',
+  'bulk$plots[[params$method]]$pVolcano \n',
+    '```\n',
+  '## Interactive plots {.tabset} \n\n',
+  'A few contrasts were selected for interactive plotting. Hovering your mouse over a point will show the name of the DEG. \n')
+
+volcanoChunkInd <- c(
+  '```{r, fig.width = 8, fig.height = 6} \n',
+  'ggplotly(bulk$plots[[params$method]]$indVolcano[["{{i}}"]], tooltip = "gene") \n',
+  '``` \n\n')
+
+pvalChunk <- c(
+  '# P-value distribution plots \n\n',
+  'If the model is parameterized correctly and there is signal in the data, we expect to see an exponential peak on the left and a flat distribution to the right. The genes that are statistically significant (and pass false discovery rate correction) will typically be a subset of the genes in the right-most bin.\n',
+  '## Plots \n',
+  '```{r, fig.width = 10, fig.height = 10}',
+  'bulk$plots[[params$method]]$pPvalue',
+    '```\n')
+
+maChunk <- c(
+  '# Mean Difference (MD) plots \n\n',
+  'The logFC for each gene is plotted against the average abundance in log2-CPM.\n',
+  '## Static MD plots (all contrasts) \n',
+  '```{r, fig.width = 12, fig.height = 14}',
+  'bulk$plots[[params$method]]$pMAplot',
+    '```\n',
+    '## Interactive plots {.tabset} \n\n',
+  'A few contrasts were selected for interactive plotting. Hovering your mouse over a point will show the name of the DEG. \n')
+
+maChunkInd <- c(
+  '```{r, fig.width = 8, fig.height = 6} \n',
+  'ggplotly(bulk$plots[[params$method]]$indMAplot[["{{i}}"]], tooltip = "gene") \n',
+  '``` \n\n')
+
+heatmapChunk <- c(
+  '# DEG heatmaps {.tabset} \n\n',
+  'The top 50 DEGs by p-value per contrast are displayed in the heatmaps below. While different genes are visualized, the underlying data for all heatmaps remains the same. Colors are scaled by z-score. \n\n'
+)
+
+heatmapChunkLoop <- c(
+  '```{r, fig.width = 8, fig.height = 8} \n',
+  'ggarrange(bulk$plots[[params$method]]$DEheatmaps[["{{i}}"]], legend = "bottom") \n',
+'``` \n')
+
+
+```
+
+```{r knitOneMethod, eval=evalMethod, results='asis'}
+# summary
+cat(knitr::knit_child(text = summaryChunk, quiet = TRUE), sep = '\n')
+
+# p value
+cat(knitr::knit_child(text = pvalChunk, quiet = TRUE), sep = '\n')
+
+# static volcano
+cat(knitr::knit_child(text = volcanoChunk, quiet = TRUE), sep = '\n')
+
+# interactive volcano
+out <- NULL
+for(i in intContrasts){
+  out <- c(out,paste0("### ", i, "\n\n"), knitr::knit_expand(text = volcanoChunkInd))
+}
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = "\n")
+
+# static MA
+cat(knitr::knit_child(text = maChunk, quiet = TRUE), sep = '\n')
+
+# interactive MA
+out <- NULL
+for(i in intContrasts){
+  out <- c(out,paste0("### ", i, "\n\n"), knitr::knit_expand(text = maChunkInd))
+}
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = "\n")
+
+# heatmaps
+cat(knitr::knit_child(text = heatmapChunk, quiet = TRUE), sep = '\n')
+
+out <- NULL
+for(i in colnames(bulk$md$contr.matrix)){
+  out <- c(out,paste0("## ", i, "\n\n"), knitr::knit_expand(text = heatmapChunkLoop))
+}
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = "\n")
+```
+
+```{r statementCompareMethods, eval=params$compare, results='asis'}
+cat("# Compare DESeq2 and limma/edgeR results \n\n",
+    "We ran two popular DEG-finding methods to determine which method best suited this particular data set. We used the same contrast matrix for both methods; once you choose your preferred methodology, we can reduce the number of contrasts to focus on your biological question.\n\n")
+
+```
+
+```{r chunktextCompareMethods, eval=params$compare}
+normalChunk <- c(
+  '## Method Normalization \n\n',
+  'These plots were generated in the last format file, but they are included as a reminder as we compare these methods.\n',
+  '```{r, fig.height=4, fig.width=10, warning=FALSE,message=FALSE}',
+  'ggarrange(bulk$plots$qc$pLimmaRLE$RLE_raw,
+  bulk$plots$qc$pLimmaRLE$RLE_norm,
+  bulk$plots$qc$pDESeqRLE$RLE_norm,
+  ncol = 3)',
+    '```\n')
+
+summaryChunk <- c(
+  '## DEG Summaries {.tabset} \n\n',
+  'Each method returns significantly enriched or depleted genes per contrast, the results of which are visible here. Enriched genes in one group are depleted in the other (and vice versa), so you look at the order of the groups within the contrast name to determine which group is "up" or "down". Generally, the contrast names are "UpGroup"vs"DownGroup".\n',
+  '### limma \n',
+  '```{r, fig.width = 6, fig.height = 6}',
+  'bulk$plots$limma$pDEGSummaryBars',
+  '```\n\n',
+  '### DESeq2 \n',
+  '```{r, fig.width = 6, fig.height = 6}',
+  'bulk$plots$deseq$pDEGSummaryBars',
+    '```\n')
+
+volcanoChunk <- c(
+  '## Volcano plots {.tabset} \n\n',
+  'Volcano plots display -log10(padj) on the y-axis and log2FoldChange on the x-axis, showing the distribution of significantly different genes between the contrasts tested.\n',
+  '### limma \n',
+  '```{r, fig.width = 12, fig.height = 14}',
+  'bulk$plots$limma$pVolcano',
+  '```\n\n',
+  '### DESeq2 \n',
+  '```{r, fig.width = 12, fig.height = 14}',
+  'bulk$plots$deseq$pVolcano',
+    '```\n')
+
+pvalChunk <- c(
+  '## P-value distribution plots {.tabset} \n\n',
+  'If the model is parameterized correctly and there is signal in the data, we expect to see an exponential peak on the left and a flat distribution to the right. The genes that are statistically significant (and pass false discovery rate correction) will typically be a subset of the genes in the right-most bin.\n',
+  '### limma \n',
+  '```{r, fig.width = 10, fig.height = 10}',
+  'bulk$plots$limma$pPvalue',
+  '```\n\n',
+  '### DESeq2 \n',
+  '```{r, fig.width = 10, fig.height = 10}',
+  'bulk$plots$deseq$pPvalue',
+    '```\n')
+
+maChunk <- c(
+  '## Mean Difference (MD) plots {.tabset} \n\n',
+  'The logFC for each gene is plotted against the average abundance in log2-CPM.\n',
+  '### limma \n',
+  '```{r, fig.width = 12, fig.height = 14}',
+  'bulk$plots$limma$pMAplot',
+  '```\n\n',
+  '### DESeq2 \n',
+  '```{r, fig.width = 12, fig.height = 14}',
+  'bulk$plots$deseq$pMAplot',
+    '```\n')
+
+compareChunk <- c(
+  '## DEG comparison \n\n',
+  'Relationships between log2fold change found by each method are compared via scatter plot and box plot.\n',
+  '### Overlap in DEG lf2c, scatterplot \n',
+  '```{r, fig.width = 6, fig.height = 6}',
+  'bulk$plots$compareMethod1 \n',
+  '```\n\n',
+    '### Overlap in DEG lf2c, boxplot \n',
+    '```{r, fig.width = 6, fig.height = 4}',
+  'bulk$plots$compareMethod2 \n',
+  '```\n\n')
+```
+
+```{r knitCompareMethods, eval=params$compare, results='asis'}
+cat(knitr::knit_child(text = normalChunk, quiet = TRUE), sep = '\n')
+cat(knitr::knit_child(text = summaryChunk, quiet = TRUE), sep = '\n')
+cat(knitr::knit_child(text = pvalChunk, quiet = TRUE), sep = '\n')
+cat(knitr::knit_child(text = volcanoChunk, quiet = TRUE), sep = '\n')
+cat(knitr::knit_child(text = maChunk, quiet = TRUE), sep = '\n')
+cat(knitr::knit_child(text = compareChunk, quiet = TRUE), sep = '\n')
+```
+

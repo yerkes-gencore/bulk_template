@@ -1,0 +1,257 @@
+---
+title: "bulk_RNAseq_Analysis"
+author: "DTG"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+
+# library(ggforce)
+# library(grid)
+# library(ggpubr)
+# library(EDASeq)
+#library(shiny)
+library(EnhancedVolcano)
+# library(tools)
+library(ComplexHeatmap)
+# library(gridExtra)
+# library(gtable)
+# library(reshape2)
+#library(rlang)
+# library(forcats)
+# library(gtools)
+library(RColorBrewer)
+library(fgsea)
+# library(MatrixGenerics)
+library(tidyverse)    ## General logic and processing
+library(yaml)         ## Parse config
+library(DESeq2)       ## Makes us have a job
+library(DT)           ## Interactive tables
+#library(circlize)     ## For colorRamp2 in heatmaps
+library(openxlsx)     ## Writing count table outputs
+#library(reshape2)
+library(kableExtra)   ## Formatting tables
+library(here)         ## For consistent directory structures
+##library(plotly)     ## If you want interactive PCA
+#library(ggrepel)      ## for PCA plot repel text
+library(plyr)
+library(msigdbr)      ## Loads pathway genesets from MsigDB
+
+#remotes::install_github('yerkes-gencore/gencoreBulk')
+library(gencoreBulk)  ## See the git repo for instructions on using this
+
+
+## sometimes they conflict with other loaded packages
+# counts <- DESeq2::counts
+here <- here::here
+```
+
+# Load data
+
+```{r}
+obj <- readRDS(here('rds/obj-post_model_fit.Rds'))
+
+model_results <- readRDS(here('rds/extracted_model_fits.Rds'))
+
+analysis_config <- read_yaml(here('config/analysis_config.yml'))
+```
+
+## DGE {.tabset}
+
+```{r DGE_table_function}
+## Can edit this if you want to adjust visualization outputs
+generateDGEDatatable <- function(DESeq_result,
+                                 alpha = analysis_config$alpha){
+  dge_data <- data.frame(DESeq_result) %>% 
+    rownames_to_column('Gene') %>% 
+    arrange(pvalue) %>%
+    select(Gene, baseMean, log2FoldChange, lfcSE, padj) %>% 
+    filter(padj < alpha) %>% 
+    mutate(baseMean=round(baseMean))%>%
+    na.omit() 
+  
+  DT::datatable(dge_data,
+    rownames = FALSE,
+    colnames = c('Gene',
+      'Base mean expression', 
+      'Log2 fold change',
+      'Fold change std. error', 
+      'Adj. p-value'), 
+    caption='Differential gene expression results for this comparison, significant genes only',
+    filter='top',
+    # autoHideNavigation = TRUE,
+    extensions = c('Buttons', 'Scroller'),
+    options = list(
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv'),
+      deferRender = TRUE
+    )) %>%
+    formatRound(c('log2FoldChange','lfcSE'), digits=2) %>%
+    formatSignif('padj')
+}
+```
+
+```{r GSEA_table_function}
+## Can edit this if you want to adjust visualization outputs
+generateGSEADatatable <- function(GSEA_result){
+  gsea_data <- GSEA_result %>%
+    filter(size>5) %>%
+    arrange(pval) %>%
+    group_by(source) %>%
+    slice_head(n=25) %>% 
+    select(pathway, source, pval,padj,NES,size) %>%
+    arrange(pval)
+  
+  DT::datatable(gsea_data,
+    rownames = FALSE,
+    filter='top',
+    # autoHideNavigation = TRUE,
+    caption='GSEA enrichment results, top from each source') %>%
+  formatRound(c('pval','padj','NES'), digits=3)
+}
+```
+
+## Comparison 1
+
+```{r}
+result <- model_results[[1]]
+summary(result)
+```
+
+```{r}
+generateVolcanoPlot(result)
+```
+
+```{r}
+generateDGEDatatable(result)
+```
+
+```{r, fig.height=8}
+## You can normalize the expression to the median of a group of samples using normalizeCountsForHeatmap.
+## See the help documentation on normalizeCountsForHeatmapByIndividual for per-sample normalization. 
+## Column splitting separates samples into blocks based on the column number.
+## e.g. column split = c(rep(1,3), rep(2,4), rep(3,8)) makes the first block have 
+## 3 samples, the second have 4, and the third have 8. 
+## Labels can be provided with slice_labels
+
+data_to_plot <- assays(obj)$rld
+data_to_plot <- normalizeCountsForHeatmapByIndividual(
+  assay(data_to_plot),
+  data_to_plot@colData,
+  group_var = 'Group', baseline = 'Cont', 
+  individual_var = 'Individual',
+  remove_baseline = TRUE)
+
+heatmapFromGenelist(geneList = getTopNGenes(result), 
+                    data = data_to_plot,
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+## Genes of interest
+
+```{r, fig.height=10}
+## creating an arbitrary genelist
+geneList <- unique(unlist(lapply(results, getTopNGenes, N=10)))
+
+data_to_plot <- assays(obj)$rld
+data_to_plot <- normalizeCountsForHeatmapByIndividual(
+  assay(data_to_plot),
+  data_to_plot@colData,
+  group_var = 'Group', baseline = 'Cont', 
+  individual_var = 'Individual',
+  remove_baseline = TRUE)
+
+heatmapFromGenelist(geneList = geneList, 
+                    data = data_to_plot,
+                    column_split = c(rep(1,3), rep(2,3), rep(3,3), rep(4,3)),
+                    slice_labels = c('Cont', 'Fac', 'Group3', 'Group4'),
+                    slice_labels_rot = 45)
+```
+
+# GSEA
+
+```{r GSEA_setup}
+gmt.file <- list()
+
+## See available genesets
+# msigdbr_species()
+# all_gene_sets = msigdbr(species = "Homo sapiens")
+# head(all_gene_sets)
+
+m_t2g_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:REACTOME") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_biocarta <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:BIOCARTA") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") %>% 
+  dplyr::select(gene_symbol, gs_name)
+m_t2g_h <- msigdbr(species = "Homo sapiens", category = "H") %>% 
+  dplyr::select(gene_symbol, gs_name)
+gmt.file <- unstack(bind_rows(m_t2g_reactome,m_t2g_h,m_t2g_biocarta,m_t2g_kegg))
+
+## Manually specify gmt.files
+##gmt.file <- append(gmt.file, gmtPathways(file.path(a)))
+```
+
+## individual
+
+```{r, fig.height=10}
+## run individual results
+## This is mouse data using human GSEA sets so not many pathways work
+gsea_result_1 <- runfgsea(DESeq_results$Group_FAC_vs_Cont,
+                        gmt.file,
+                        minSize = 1,
+                        breakdown_pathway_names = TRUE)
+
+gseaDotplot_single(gsea_result_1, signif_only = FALSE, filter_source = 'REACTOME')
+```
+
+## joint
+
+```{r}
+gsea_results <- lapply(model_results.pbmc, runfgsea, pathways=gmt.file, breakdown_pathway_names=TRUE)
+```
+
+```{r}
+combine_GSEA_results <- function(gsea_results,
+                                 pathways){
+  gsea_results <- lapply(gsea_results, function(x){x %>% filter(pathway %in% pathways)})
+  gsea_results <- data.table::rbindlist(gsea_results, idcol='ID')
+}
+
+pathways = c('HALLMARK_INTERFERON_ALPHA_RESPONSE', 'HALLMARK_INTERFERON_GAMMA_RESPONSE',
+             'HALLMARK_INFLAMMATORY_RESPONSE', 'HALLMARK_IL6_JAK_STAT3_SIGNALING')
+joint_GSEA_results <- combine_GSEA_results(gsea_results, pathways)
+gseaDotplot_joint(joint_GSEA_results)
+```
+
+# Writing results
+
+```{r}
+writeDESeqResults(model_results)
+```
+
+```{r}
+writefGSEAResults(gsea_results)
+```
+
+# Render outfile
+
+```{r}
+rmarkdown::render(here::here('scripts/bulk_rnaseq_analysis_template.format.Rmd'),
+                  output_file = 'Analysis_report.html',
+                  output_dir = here::here('reports'),
+                  params = list(
+                    title = 'Bulk RNA Analysis Report')
+                  )
+```
+

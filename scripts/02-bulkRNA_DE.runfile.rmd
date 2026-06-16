@@ -1,0 +1,975 @@
+---
+title: "02-bulkRNA_DE.runfile"
+author: "ENPRC Genomics Core"
+date:  "`r Sys.Date()`"
+output:
+  pdf_document:
+    df_print: kable
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+```
+
+# Libraries
+```{r}
+# analysis
+#library(DESeq2)
+library(limma)
+library(edgeR)
+library(msigdbr)
+library(fgsea)
+#library(gencoreBulk)
+
+# functional
+library(tidyverse)
+library(readr)
+library(readxl)
+library(yaml)
+library(dplyr)
+library(here)
+library(tinytex) # required for PDF output
+library(rmdformats) # required for HTML output
+
+# plotting
+library(ggtext)
+library(ggforce)
+library(ggpubr)
+library(ggplotify)
+library(patchwork)
+library(plotly)
+
+## custom functions
+source(here("R/limmaEdgeR_functions.R")) 
+source(here("R/heatmap_functions.R"))
+source(here("R/QC_functions.R"))
+
+# I personally like to see my month name, even if it isn't ISO compliant
+getDate <- function() {
+  format(Sys.Date(), "%Y%b%d")
+}
+```
+
+# Explanation of report workflow
+
+This runfile is where we can run all the code required for the analysis, which will populate our environment with objects used in the format file. We typically run as much of the more heavier computation in the runfile as possible so that it doesn't take long to render the format file, since we may need to render iteratively as we adjust the format, fix typos, write explanatory notes, or add report sections.
+
+# Resources
+## Choosing a model design
+https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html
+
+## Filtering data with EdgeR
+https://www.bioconductor.org/packages/devel/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf (page 14)
+
+# Part 0 - Set-up 
+*Run set-up steps manually*
+
+## Starting with object made in script 01-bulkRNA_QC.runfile.Rmd
+```{r load data, eval = FALSE}
+bulk <- read_rds(here("rds/report-01/QC_bulk-2026May19.rds"))
+```
+
+## Custom functions....
+```{r}
+## I know, I am trying to get rid of functions. But this is a super useful one for automation.
+### Store code as functions when the input is something you want to share in the format file
+getSourceText <- function(func,a,b) {
+  src <- attr(func, "srcref") # pull out function text
+  if (is.null(src)) {return("Something went wrong. Ensure R session has `options(keep.source = TRUE)`")}
+  raw_text <- as.character(src)
+  trim_text <- tail(head(raw_text, -a), -b) # remove lines that encode extra function info 
+  formatted_text <- paste(trim_text, collapse = "\n") # convert function text to string
+  return(formatted_text)
+}
+
+# My group names in the strip text are too long, so I am labeling them with
+# a newline
+newLineLabel <- function(string) {
+  string <- gsub("\\."," \n",string)
+  string
+}
+```
+
+# Part 1 - Prep design and contrasts
+
+## 1.1 - Set FDR
+
+```{r}
+fdr <- 0.05
+```
+
+## 1.2 - Check your `design` object and decide if you want to keep it
+
+Remember: By default, this template uses `grp` for cross-sectional studies and `group` for longitudinal studies. Whichever is relevant was stored as "group" when the DGElist object was initialized.
+
+Default may not work for your project. Modify as needed.
+
+```{r set design}
+bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
+```
+
+## 1.3 - Define contrasts
+
+The contrasts you generate can be used for both DESeq2 and limma/EdgeR.
+Generally, you want to structure your contrasts as `testVar - controlVar`. I am working on a way to automate building a contrast matrix, but for now, it is manual.
+
+```{r define contrast}
+## removing metadata column name from contrast matrix
+colnames(bulk$md$design) <- gsub("group", "", colnames(bulk$md$design))
+
+# This is a funky workaround I found so the format file doesn't need to be edited to print the contrasts used
+## The contrasts are stored within a function, so modify this function like you normally would define contrasts
+
+contrastFunction <- function(x) {
+  makeContrasts(
+# Within-group-DNA Day0 effects
+  DNA_D01vsD00 = DNA.Day01 - DNA.Day00,
+  DNA_D02vsD00 = DNA.Day02 - DNA.Day00,
+  DNA_D04vsD00 = DNA.Day04 - DNA.Day00,
+  DNA_D07vsD00 = DNA.Day07 - DNA.Day00,
+  DNA_D14vsD00 = DNA.Day14 - DNA.Day00,
+  
+# Within-group-mRNA Day0 effects
+  mRNA_D01vsD00 = mRNA.Day01 - mRNA.Day00,
+  mRNA_D02vsD00 = mRNA.Day02 - mRNA.Day00,
+  mRNA_D04vsD00 = mRNA.Day04 - mRNA.Day00,
+  mRNA_D07vsD00 = mRNA.Day07 - mRNA.Day00,
+  mRNA_D14vsD00 = mRNA.Day14 - mRNA.Day00,
+  
+# Within-day group effects
+  DNA_D00vsmRNA_D00 = DNA.Day00 - mRNA.Day00,
+  DNA_D01vsmRNA_D01 = DNA.Day01 - mRNA.Day01,
+  DNA_D02vsmRNA_D02 = DNA.Day02 - mRNA.Day02,
+  DNA_D04vsmRNA_D04 = DNA.Day04 - mRNA.Day04,
+  DNA_D07vsmRNA_D07 = DNA.Day07 - mRNA.Day07,
+  DNA_D14vsmRNA_D14 = DNA.Day14 - mRNA.Day14,
+  
+# Change-from-baseline ignoring group
+  Overall_D01vsD00 = (DNA.Day01 + mRNA.Day01)/2 - (DNA.Day00 + mRNA.Day00)/2,
+  Overall_D02vsD00 = (DNA.Day02 + mRNA.Day02)/2 - (DNA.Day00 + mRNA.Day00)/2,
+  Overall_D04vsD00 = (DNA.Day04 + mRNA.Day04)/2 - (DNA.Day00 + mRNA.Day00)/2,
+  Overall_D07vsD00 = (DNA.Day07 + mRNA.Day07)/2 - (DNA.Day00 + mRNA.Day00)/2,
+  Overall_D14vsD00 = (DNA.Day14 + mRNA.Day14)/2 - (DNA.Day00 + mRNA.Day00)/2,
+  levels = bulk$md$design)
+}
+
+## eval() then actually starts the function, running makeContrasts() as normal
+bulk$md$contr.matrix <- eval(contrastFunction())
+
+## Using the custom function getSourceText, we can print out the contrasts!
+cat(getSourceText(contrastFunction,2,2)) # removes two lines from beginning and end
+
+```
+
+# Part 2 - limma/EdgeR
+
+## 2.1 - Run `voomLmFit()` or `glmQLFit()` to get DE results for limma
+
+```{r calculate limma DEGs, warning=FALSE,message=FALSE}
+bulk <- fitVoomLm(bulk,
+                  design = bulk$md$design,
+                  contr.matrix=bulk$md$contr.matrix,
+                  block = bulk$dge$samples$subjectID,
+                  sample.weights = TRUE)
+
+bulk$degTab$limma <- createResTable(bulk$fit.contr, bulk$md$contr.matrix)
+bulk$degTab$limma <- bulk$degTab$limma %>%
+    mutate(signif_dir = ifelse(padj >= fdr, "NotSig",
+                           ifelse(log2FoldChange < 0, "Down", "Up")) %>%
+             factor(., levels = c("NotSig", "Up", "Down")),
+           signif = padj < fdr)
+```
+
+## 2.2 - Build QC plots of limma-processed data
+
+This chunk includes for each contrast:
+- MA-plots (Average Expression vs Log2FoldChange)
+- Volcano plots (Log2FoldChange vs -log(padj))
+- p-value histogram
+
+```{r build limma QC plots, fig.width = 10, fig.height = 6, warning = FALSE}
+# MAplot
+## individual plots
+for(i in colnames(bulk$md$contr.matrix)){
+  bulk$plots$limma$indMAplot[[i]] <- bulk$degTab$limma %>%
+    filter(contrast == i) %>%
+    {
+      ggplot(data = .) +
+        geom_point(data = filter(., !signif),
+                   aes(x = AveExpr, y = log2FoldChange),
+                   color = "black", size = 0.1) +
+        geom_point(data = filter(., signif),
+                   aes(x = AveExpr, y = log2FoldChange,
+                   color = signif_dir, text = gene),
+                   size = 0.2) +
+        theme_bw() +
+        ylim(-max(abs(.$log2FoldChange)),
+             max(abs(.$log2FoldChange))) +
+        scale_color_manual(
+          values = c("black", "tomato", "dodgerblue"),
+          labels = c("No significance", "Upregulated","Downregulated"),
+          drop = FALSE,
+          guide = guide_legend(override.aes = list(size = 3))) +
+        labs(color = "Gene Enrichment",
+             title = i,
+             x = "Average Expression",
+             y = "Log2 Fold Change") +
+        geom_hline(yintercept=0, linewidth = .5)
+    }
+}
+## combined plots
+bulk$plots$limma$pMAplot <- ggarrange(plotlist = bulk$plots$limma$indMAplot,
+                                      ncol = 5,
+                                      nrow = ceiling(ncol(bulk$md$contr.matrix)/5),
+                                      common.legend = TRUE)
+
+# Volcano plots
+## individual plots
+for(i in colnames(bulk$md$contr.matrix)){
+  bulk$plots$limma$indVolcano[[i]] <- bulk$degTab$limma %>%
+    filter(contrast == i) %>%
+    {
+      ggplot(data = .) +
+        geom_point(data = filter(., !signif),
+                   aes(x = log2FoldChange, y = -log(padj, base = 10)),
+                   color = "black", size = 0.1) +
+        geom_point(data = filter(., signif),
+                   aes(x = log2FoldChange, y = -log(padj, base = 10),
+                   color = signif_dir, text = gene),
+                   size = 0.2) +
+        theme_bw() +
+        xlim(-max(abs(.$log2FoldChange)),
+             max(abs(.$log2FoldChange))) +
+        scale_color_manual(
+          values = c("black", "tomato", "dodgerblue"),
+          labels = c("No significance", "Upregulated","Downregulated"),
+          drop = FALSE,
+          guide = guide_legend(override.aes = list(size = 3))) +
+        labs(color = "Gene Enrichment",
+             title = i,
+             x = "Log2 Fold Change",
+             y = "Adjusted P-value") +
+        geom_vline(xintercept=0, size = .5) +
+        geom_hline(yintercept = -log(0.05, base = 10), size = .5,
+                   linetype = "dashed", color = "red") +
+        scale_y_continuous(labels = function(i) signif(10^-i,1)) +
+        annotate("text", x = -10, y=-log(0.05, base = 10),size = 3,
+                 vjust = 2, hjust = 0,label = "p = 0.05", color = "red")
+      }
+}
+## combined plots
+bulk$plots$limma$pVolcano <- ggarrange(plotlist = bulk$plots$limma$indVolcano,
+                                      ncol = 5,
+                                      nrow = ceiling(ncol(bulk$md$contr.matrix)/5),
+                                      common.legend = TRUE)
+
+# P-value distribution plots
+bulk$plots$limma$pPvalue <- bulk$degTab$limma %>%
+  dplyr::mutate(!!paste0("pBH < ", fdr) := ifelse(padj < fdr, "TRUE", "FALSE") %>%
+                  factor(., levels = c("TRUE", "FALSE"))) %>%
+  ggplot(data = ., aes(x = pvalue, fill = .data[[paste0("pBH < ", fdr)]])) +
+  geom_histogram(breaks = seq(0,1,0.01)) +
+  scale_fill_manual(values = c("tomato", "black"), drop=FALSE) +
+  theme_bw() +
+  facet_wrap(~contrast, scales = "free_y")
+
+```
+
+### 2.2.1 - View limma QC plots
+
+```{r plot limma QC, fig.width = 12, fig.height = 16}
+bulk$plots$limma$pMAplot
+bulk$plots$limma$pVolcano
+bulk$plots$limma$pPvalue
+```
+
+### 2.2.2 - Interactive plots
+The plots above can be made interactive, where hovering over a point brings up the gene name. This should not be done with all contrasts, or it freezes your computer. Instead, pull out a few contrasts to explore and ask the investigator if they want any particular contrasts to be made interactive
+
+```{r interactive limma QC plots, fig.width = 8, fig.height = 6, eval = FALSE}
+# set to contrasts of interest for interactive plotting
+intContrasts <- c("DNA_D01vsD00","mRNA_D01vsD00", "DNA_D01vsmRNA_D01")
+
+for(i in intContrasts){
+  print(ggplotly(bulk$plots$limma$indMAplot[[i]], tooltip = "gene"))
+}
+
+```
+
+## 2.3 - Summarize limma DEG counts per contrast
+
+```{r limma DEG summary}
+## summarize
+bulk$tables$limma$nDEGSummary <- bulk$degTab$limma %>%
+  group_by(contrast) %>%
+    dplyr::rename(l2fc = log2FoldChange, pBH = padj) %>%
+    dplyr::summarize(signif_down = sum(pBH < fdr & l2fc < 0),
+              nonsignif = sum(pBH >= fdr),
+              signif_up = sum(pBH < fdr & l2fc > 0)) %>%
+  dplyr::mutate(signif = signif_up + signif_down,
+                signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓"))
+
+# making text grob object for use with ggarrange
+bulk$plots$limma$nDEGtab <- bulk$tables$limma$nDEGSummary %>%
+  dplyr::select(contrast, signif_signs) %>%
+  ggtexttable(
+    .,
+    rows = NULL,
+    theme = ttheme("light",
+                   padding = unit(c(5, 3), "mm"),
+                   tbody.style = tbody_style(
+                     color = "black", fill = "white",
+                     face = "plain", size = 10,
+                     linewidth = 1, linecolor = "white",
+                     hjust = as.vector(
+                       matrix(c(0, .5), ncol = 2, nrow = nrow(.),
+                              byrow = TRUE)),
+                     x = as.vector(
+                       matrix(c(0.05, .5), ncol = 2, nrow = nrow(.),
+                              byrow = TRUE))))
+    )
+
+## Bar plot
+#### experimental, curious as to if the annotation will consistently be in the correct area
+bulk$plots$limma$pDEGSummaryBars <- bulk$tables$limma$nDEGSummary %>%
+  pivot_longer(
+    cols = c(signif_down, signif_up),
+    names_to = "sign",
+    values_to = "n_signif") %>%
+  dplyr::mutate(
+    n_signif = ifelse(sign == "signif_down",
+                      -n_signif, n_signif)) %>%
+  {
+    ggplot(.,aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
+      scale_fill_manual(values = c(
+        "signif_down" = "dodgerblue",
+        'signif_up' = "tomato")) +
+      geom_bar(stat="identity") +
+      theme_bw() +
+      coord_cartesian(xlim = c(min(.$n_signif),max(.$n_signif)),
+                      ylim = c(1,nrow(.)/2),
+                      clip = "off") +
+      theme(plot.margin = unit(c(2, 3, 1, 1), "cm"),
+            axis.text = element_text(color = "black")) +
+      annotate("text",
+               x = quantile(.[which(.$n_signif <0),]$n_signif,.25),
+               y = nrow(.)/2+1,
+               label = "Downregulated", vjust = 0) +
+      annotate("text",
+               x = quantile(.[which(.$n_signif >0),]$n_signif,.75),
+               y = nrow(.)/2+1,
+               label = "Upregulated", vjust = 0) +
+      ylab(NULL) +
+      xlab("DEGs per contrast (#)") +
+      guides(fill = "none") +
+      geom_text(data = .,
+                aes(label = signif_signs,
+                    y = contrast,
+                    x = max(n_signif)*1.15,
+                    fill = NULL),
+                hjust = 0, size = 3)
+  }
+```
+
+### 2.3.1 - View summary of limma DEGs
+```{r view limma summary, fig.width = 6, fig.height = 6}
+bulk$plots$limma$pDEGSummaryBars
+```
+
+## 2.4 - Heatmaps of DE genes (limma)
+```{r make limma DEG heatmaps, warning = FALSE, fig.width = 12, fig.height = 8}
+# prepping list for looping
+bulk$plots$limma$DEheatmaps <- list()
+bulk$tables$limma$scaleGenes <- as.data.frame(t(scale(t(bulk$dge$lcpm))))
+
+# loop to create list of plots for each contrast
+for(i in colnames(bulk$md$contr.matrix)){
+
+# defining contrast and pulling out from bulk$md$contr.matrix
+  cmSubset <- bulk$md$contr.matrix %>%
+    as.data.frame() %>%
+    rownames_to_column("group") %>%
+    dplyr::select(group, "comparison" = all_of(i))
+
+# subsetting gene table
+  gene_tbl <- bulk$degTab$limma %>%
+    getTopDegTbl(., contrast_i = i, groupID = "group",
+                 arrange_by = "pvalue", direction = "unequal",
+                 padj_cutoff = NULL, slice_n = 50,
+                 filter_pattern = NULL) %>%
+    dplyr::select(gene, padj, l2fc = log2FoldChange) %>%
+    dplyr::mutate(color = dplyr::case_when(
+      is.na(padj) ~ "grey",
+      padj >= fdr ~ "black",
+      l2fc > 0 ~ "tomato",
+      l2fc < 0 ~ "dodgerblue",
+      TRUE ~ NA_character_))
+
+# getting gene order for heatmap
+  ord <- hclust(dist(bulk$tables$limma$scaleGenes[c(gene_tbl$gene),]))$order
+
+# combining z-score, sample table, and gene table and prepping factors for plotting
+ bulk$plots$limma$DEheatmaps[[i]] <- bulk$tables$limma$scaleGenes[c(gene_tbl$gene),] %>%
+    rownames_to_column("gene") %>%
+    tidyr::pivot_longer(!gene,
+                 names_to = "sampleID",
+                 values_to = "zscore")%>%
+    dplyr::inner_join(.,bulk$dge$samples,by="sampleID") %>%
+    dplyr::inner_join(.,gene_tbl, by="gene") %>%
+    dplyr::inner_join(.,cmSubset, by = "group") %>%
+    dplyr::arrange(group,subjectID) %>%
+    dplyr::mutate(
+      group = factor(group, levels = unique(group)),
+      subjectID = factor(subjectID, levels = unique(subjectID)),
+      gene = factor(gene, levels = unique(gene)[ord])) %>%
+   {
+     ggplot(data = .,
+            aes(x = subjectID, y = gene, fill = zscore)) +
+       geom_tile(show.legend = TRUE) +
+       scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato2",
+                            limits = c(min(bulk$tables$limma$scaleGenes),
+                                       max(bulk$tables$limma$scaleGenes))) +
+       facet_grid(~ group,
+                  labeller = labeller(group = newLineLabel),
+                  scales="free_x", space="fixed") +
+       geom_rect(data = subset(., comparison %in% c(1,-1)),
+                 linewidth = 1.5, fill = NA, colour = "black",
+                 xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+       labs(title = paste0("Top 50 DE Genes in Contrast: ",i),
+            x = NULL, y = NULL) +
+       theme_minimal(base_size = 10) +
+       theme(plot.title = element_text(size = 16, face = "bold"),
+             axis.text.x = element_text(angle = 90, hjust = 1, color = "black"),
+             axis.text.y = element_text(color = .$color[ord], size = 10),
+             strip.text = element_text(size = 10, face = "bold"))
+   }
+}
+
+```
+
+### 2.4.1 - Plot DE heatmaps (limma)
+```{r plot limma DE heatmaps, fig.width = 10, fig.height = 9}
+for(i in colnames(bulk$md$contr.matrix)){
+    suppressWarnings(print(ggarrange(bulk$plots$limma$DEheatmaps[[i]], legend = "bottom")))
+}
+```
+
+# Part 3 - DESeq2
+
+## 3.1 - Get DE results from DESeq2 object
+
+```{r get DEGs from DESeq2}
+# using same contrasts defined for limma/edgeR
+
+for(i in colnames(bulk$md$contr.matrix)){
+  bulk$deseq$contrasts[[i]] <- results(bulk$deseq$dds,
+                                       contrast = c(bulk$md$contr.matrix[,i]),
+                                       tidy = TRUE) %>%
+    dplyr::rename(gene = row) %>%
+    dplyr::mutate(contrast = i)
+}
+
+bulk$degTab$deseq <- data.table::rbindlist(bulk$deseq$contrasts)
+bulk$degTab$deseq[is.na(bulk$degTab$deseq)] <- 1 # since DESeq adds NA for filtered out padj
+bulk$degTab$deseq <- bulk$degTab$deseq %>%
+  dplyr::mutate(contrast = factor(contrast, levels = colnames(bulk$md$contr.matrix)),
+                signif_dir = ifelse(padj >= fdr, "NotSig",
+                                    ifelse(log2FoldChange < 0, "Down", "Up")) %>%
+                  factor(., levels = c("NotSig", "Up", "Down")),
+                signif = padj < fdr)
+
+```
+
+## 3.2 - Build QC plots of DESeq2-processed data
+
+This chunk includes for each contrast:
+- MA-plots (Average Expression vs Log2FoldChange)
+- Volcano plots (Log2FoldChange vs -log(padj))
+- p-value histogram
+
+```{r DESeq2 QC plots, warning = FALSE}
+# MAplot
+## individual plots
+for(i in colnames(bulk$md$contr.matrix)){
+  bulk$plots$deseq$indMAplot[[i]] <- bulk$degTab$deseq %>%
+    filter(contrast == i) %>%
+    {
+      ggplot(data = .) +
+        geom_point(data = filter(., !signif),
+                   aes(x = log(baseMean), y = log2FoldChange), 
+                   color = "black", size = 0.1) +
+        geom_point(data = filter(., signif), 
+                   aes(x = log(baseMean), y = log2FoldChange, 
+                       color = signif_dir, text = gene), 
+                   size = 0.2) +
+        theme_bw() +  
+        ylim(-max(abs(.$log2FoldChange)),
+             max(abs(.$log2FoldChange))) +
+        scale_color_manual(
+          values = c("black", "tomato", "dodgerblue"), 
+          labels = c("No significance", "Upregulated","Downregulated"),
+          drop = FALSE,
+          guide = guide_legend(override.aes = list(size = 3))) +
+        labs(color = "Gene Enrichment",
+             title = i,
+             x = "Log baseMean",
+             y = "Log2 Fold Change") + 
+        geom_hline(yintercept=0, linewidth = .5) 
+    }
+}
+## combined plots
+bulk$plots$deseq$pMAplot <- ggarrange(plotlist = bulk$plots$deseq$indMAplot, 
+                                      ncol = 5, 
+                                      nrow = ceiling(ncol(bulk$md$contr.matrix)/5), 
+                                      common.legend = TRUE)
+
+# Volcano plot
+## individual plots
+for(i in colnames(bulk$md$contr.matrix)){
+  bulk$plots$deseq$indVolcano[[i]] <-  bulk$degTab$deseq %>%
+    filter(contrast == i) %>%
+    {
+      ggplot(data = .) +
+        geom_point(data = filter(., !signif),
+                   aes(x = log2FoldChange, y = -log(padj, base = 10)), 
+                   color = "black", size = 0.1) +
+        geom_point(data = filter(., signif), 
+                   aes(x = log2FoldChange, y = -log(padj, base = 10), 
+                       color = signif_dir, text = gene), 
+                   size = 0.2) +
+        theme_bw() +
+        xlim(-max(abs(.$log2FoldChange)), 
+             max(abs(.$log2FoldChange))) +
+        scale_color_manual(values = c("black", "tomato", "dodgerblue"), 
+                           labels = c("No significance", "Upregulated","Downregulated"),
+                           drop = FALSE,
+                           guide = guide_legend(override.aes = list(size = 3))) +
+        labs(color = "Gene Enrichment",
+             title = i,
+             x = "Log2 Fold Change",
+             y = "Adjusted P-value") +
+        geom_vline(xintercept=0, size = .5) +
+        geom_hline(yintercept = -log(0.05, base = 10), size = .5, 
+                   linetype = "dashed", color = "red") +
+        scale_y_continuous(labels = function(i) signif(10^-i,1)) +
+        annotate("text", x = -10, y=-log(0.05, base = 10),size = 3,
+                 vjust = 2, hjust = 0,label = "p = 0.05", color = "red")
+    }
+}
+## combined plots
+bulk$plots$deseq$pVolcano <- ggarrange(plotlist = bulk$plots$deseq$indVolcano, 
+                                      ncol = 5, 
+                                      nrow = ceiling(ncol(bulk$md$contr.matrix)/5), 
+                                      common.legend = TRUE)
+
+## P-value distribution plots
+bulk$plots$deseq$pPvalue <- bulk$degTab$deseq %>%
+      dplyr::mutate(!!paste0("pBH < ", fdr) := ifelse(padj < fdr, "TRUE", "FALSE") %>%
+               factor(., levels = c("TRUE", "FALSE"))) %>%
+    ggplot(data = ., aes(x = pvalue, fill = .data[[paste0("pBH < ", fdr)]])) +
+      geom_histogram(breaks = seq(0,1,0.01)) +
+      scale_fill_manual(values = c("tomato", "black"), drop=FALSE) +
+      theme_bw() +
+    facet_wrap(~contrast, scales = "free_y")
+```
+
+### 3.2.1 - View DESeq2 QC plots
+
+```{r plot deseq QC, fig.width = 12, fig.height = 16}
+bulk$plots$deseq$pMAplot
+bulk$plots$deseq$pVolcano
+bulk$plots$deseq$pPvalue
+```
+
+### 3.2.2 - Interactive plots
+The plots above can be made interactive, where hovering over a point brings up the gene name. This should not be done with all contrasts, or it freezes your computer. Instead, pull out a few contrasts to explore and ask the investigator if they want any particular contrasts to be made interactive
+
+```{r interactive QC plots, fig.width = 8, fig.height = 6}
+intContrasts <- c("DNA_D01vsD00","mRNA_D01vsD00", "DNA_D01vsmRNA_D01")
+
+for(i in intContrasts){
+  print(ggplotly(bulk$plots$deseq$indMAplot[[i]], tooltip = "gene"))
+}
+```
+
+## 3.3 - Summarize DESeq2 DEG counts per contrast 
+
+```{r make deseq summary, fig.width = 6, fig.height = 8}
+## summarize
+bulk$tables$deseq$nDEGSummary <- bulk$degTab$deseq %>%
+  dplyr::mutate(padj = replace_na(padj,1)) %>%
+  dplyr::rename(l2fc = log2FoldChange, pBH = padj) %>% 
+  dplyr::group_by(contrast) %>%
+  dplyr::summarize(signif_down = sum(pBH < fdr & l2fc < 0),
+                   nonsignif = sum(pBH >= fdr),
+                   signif_up = sum(pBH < fdr & l2fc > 0)) %>%
+  dplyr::mutate(signif = signif_up + signif_down,
+                signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓"))
+
+## table
+bulk$plots$deseq$nDEGtab <- bulk$tables$deseq$nDEGSummary %>%
+  dplyr::select(contrast, signif_signs) %>%
+  ggtexttable(
+    .,
+    rows = NULL,
+    theme = ttheme("light",
+                   padding = unit(c(5, 3), "mm"),
+                   tbody.style = tbody_style(
+                     color = "black", fill = "white",
+                     face = "plain", size = 10,
+                     linewidth = 1, linecolor = "white",
+                     hjust = as.vector(
+                       matrix(c(0, .5), ncol = 2, nrow = nrow(.), 
+                              byrow = TRUE)),
+                     x = as.vector(
+                       matrix(c(0.05, .5), ncol = 2, nrow = nrow(.), 
+                              byrow = TRUE))))
+    )
+
+## bar plot
+#### experimental, curious as to if the annotation will consistently be in the correct area
+bulk$plots$deseq$pDEGSummaryBars <- bulk$tables$deseq$nDEGSummary %>%
+  pivot_longer(cols = c(signif_down, signif_up), 
+               names_to = "sign", 
+               values_to = "n_signif") %>%
+  dplyr::mutate(n_signif = ifelse(sign == "signif_down",
+                           -n_signif, n_signif)) %>%
+  {
+    ggplot(.,aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
+      scale_fill_manual(values = c(
+        "signif_down" = "dodgerblue", 
+        'signif_up' = "tomato")) +
+      geom_bar(stat="identity") +
+      theme_bw() +
+      coord_cartesian(xlim = c(min(.$n_signif),max(.$n_signif)), 
+                      ylim = c(1,nrow(.)/2),
+                      clip = "off") +
+      theme(plot.margin = unit(c(2, 3, 1, 1), "cm"),
+            axis.text = element_text(color = "black")) +  
+      annotate("text", 
+               x = quantile(.[which(.$n_signif <0),]$n_signif,.25), 
+               y = nrow(.)/2+1, 
+               label = "Downregulated", vjust = 0) +
+      annotate("text", 
+               x = quantile(.[which(.$n_signif >0),]$n_signif,.75), 
+               y = nrow(.)/2+1, 
+               label = "Upregulated", vjust = 0) +
+      ylab(NULL) +
+      xlab("DEGs per contrast (#)") +
+      guides(fill = "none") +
+      geom_text(data = ., 
+                aes(label = signif_signs,
+                    y = contrast, 
+                    x = max(n_signif)*1.15, 
+                    fill = NULL),
+                hjust = 0, size = 3)
+}
+
+```
+
+### 3.3.1 - View summary of DESeq2 DEGs
+
+```{r view deseq summary, fig.width = 6, fig.height = 6}
+bulk$plots$deseq$pDEGSummaryBars
+```
+
+## 3.4 Heatmaps of DE genes (DESeq2)
+```{r build DESeq2 heatmap, warning=FALSE}
+# prepping list for looping
+bulk$plots$deseq$DEheatmaps <- list()
+bulk$tables$deseq$scaleGenes <- as.data.frame(t(scale(t(bulk$deseq$normCounts))))
+
+# loop to create list of plots for each contrast
+for(i in colnames(bulk$md$contr.matrix)){
+  
+# defining contrast and pulling out from bulk$md$contr.matrix
+  cmSubset <- bulk$md$contr.matrix %>%
+    as.data.frame() %>%
+    rownames_to_column("group") %>%
+    dplyr::select(group, "comparison" = all_of(i))
+  
+# subsetting gene table
+  gene_tbl <- bulk$degTab$deseq %>%
+    getTopDegTbl(., contrast_i = i, groupID = "group",
+                 arrange_by = "pvalue", direction = "unequal", 
+                 padj_cutoff = NULL, slice_n = 50, 
+                 filter_pattern = NULL) %>%
+    dplyr::select(gene, padj, l2fc = log2FoldChange) %>%
+    dplyr::mutate(color = dplyr::case_when(
+      is.na(padj) ~ "grey",
+      padj >= fdr ~ "black",
+      l2fc > 0 ~ "tomato",
+      l2fc < 0 ~ "dodgerblue",
+      TRUE ~ NA_character_))
+
+# getting gene order for heatmap
+  ord <- hclust(dist(bulk$tables$deseq$scaleGenes[c(gene_tbl$gene),]))$order
+  
+# combining z-score, sample table, and gene table and prepping factors for plotting
+ bulk$plots$deseq$DEheatmaps[[i]] <- bulk$tables$deseq$scaleGenes[c(gene_tbl$gene),] %>%
+    rownames_to_column("gene") %>%
+    tidyr::pivot_longer(!gene,
+                 names_to = "sampleID",
+                 values_to = "zscore")%>%
+    dplyr::inner_join(.,bulk$dge$samples,by="sampleID") %>%
+    dplyr::inner_join(.,gene_tbl, by="gene") %>%
+    dplyr::inner_join(.,cmSubset, by = "group") %>%
+    dplyr::arrange(group,subjectID) %>%    
+    dplyr::mutate(
+      group = factor(group, levels = unique(group)),
+      subjectID = factor(subjectID, levels = unique(subjectID)),
+      gene = factor(gene, levels = unique(gene)[ord])) %>%
+   {
+     ggplot(data = ., 
+            aes(x = subjectID, y = gene, fill = zscore)) +
+       geom_tile(show.legend = TRUE) +
+       scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato2",
+                            limits = c(min(bulk$tables$deseq$scaleGenes),
+                                       max(bulk$tables$deseq$scaleGenes))) +
+       facet_grid(~ group,              
+                  labeller = labeller(group = newLineLabel), 
+                  scales="free_x", space="fixed") +
+       geom_rect(data = subset(., comparison %in% c(1,-1)), 
+                 linewidth = 1.5, fill = NA, colour = "black", 
+                 xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+       labs(title = paste0("Top 50 DE Genes in Contrast: ",i), 
+            x = NULL, y = NULL) +
+       theme_minimal(base_size = 10) +
+       theme(plot.title = element_text(size = 16, face = "bold"),
+             axis.text.x = element_text(angle = 90, hjust = 1, color = "black"),
+             axis.text.y = element_text(color = .$color[ord], size = 10),
+             strip.text = element_text(size = 10, face = "bold"))          
+   } 
+}
+
+```
+
+### 3.4.1 - Plot DE heatmaps (DESeq2)
+
+```{r plot deseq DE heatmaps, fig.width = 10, fig.height = 9}
+for(i in colnames(bulk$md$contr.matrix)){
+    suppressWarnings(print(ggarrange(bulk$plots$deseq$DEheatmaps[[i]], legend = "bottom")))
+}
+```
+
+# Part 4 - Compare DEG methods
+This chunk compares the DEG l2fc and padj values returned by both methods. There may be other beneficial tests to run
+
+## 4.1 - Generate comparisons
+```{r compare DESeq2 and Limma results, warning=FALSE}
+# limma results: bulk$degTab$limma
+# DESeq2 results: bulk$degTab$deseq
+
+limmaTab <- bulk$degTab$limma %>%
+    dplyr::select(contrast, gene, l2fc = log2FoldChange, padj, pvalue) %>%
+    dplyr::rename_with(~ paste0("L_", .x, recycle0 = TRUE),
+                  all_of(c("l2fc", "padj", "pvalue")))
+
+deseqTab <- bulk$degTab$deseq %>%
+    dplyr::select(contrast, gene, l2fc = log2FoldChange, padj, baseMean, pvalue) %>%
+    dplyr::rename_with(~ paste0("D_", .x, recycle0 = TRUE),
+                  all_of(c("l2fc", "padj", "baseMean", "pvalue")))
+
+fullTab <- full_join(limmaTab,deseqTab, by = c("contrast","gene"))
+fullTab <- fullTab %>%
+  dplyr::mutate(D_padj = replace_na(D_padj,1)) %>%
+  dplyr::mutate(sigCol = ifelse(D_padj < 0.05 & L_padj < 0.05, "red",
+                          ifelse(D_padj < 0.05 & L_padj > 0.05, "pink",
+                          ifelse(D_padj > 0.05 & L_padj < 0.05, "orange","grey"))))
+
+# plot with all samples
+pbase <- ggplot(data = fullTab,
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), 
+             color = "black", shape = 21) +
+  theme_bw(base_size = 8) + 
+  scale_fill_identity() +
+  xlab("limma l2fc") +
+  ylab("DESeq2 l2fc") +
+  xlim(c(min(fullTab$L_l2fc),max(fullTab$L_l2fc))) +
+  ylim(c(min(fullTab$D_l2fc),max(fullTab$D_l2fc))) 
+
+p1 <- pbase + 
+  geom_point(data = fullTab[which(fullTab$sigCol == "grey"),],
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), color = "black", shape = 21) +
+  geom_point(data = fullTab[which(fullTab$sigCol != "grey"),],
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), color = "black", shape = 21) +
+  xlab(NULL) +
+  scale_fill_identity(guide = "legend", 
+                      labels = c("none", "limma only","DESeq2 only","both methods")) 
+  
+p2 <- pbase + 
+  geom_point(data = fullTab[which(fullTab$sigCol == "red"),],
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), color = "black", shape = 21) +
+  geom_smooth(data = fullTab[which(fullTab$sigCol == "red"),],
+             aes(x = L_l2fc, y = D_l2fc, color = "black"), linewidth = 0.5, 
+             method = "lm", se = FALSE, show.legend = FALSE) +
+  xlab(NULL) +
+  ylab(NULL) 
+
+p3 <- pbase + 
+  geom_point(data = fullTab[which(fullTab$sigCol == "orange"),],
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), color = "black", shape = 21) +
+  geom_smooth(data = fullTab[which(fullTab$sigCol == "orange"),],
+             aes(x = L_l2fc, y = D_l2fc, color = "black"), linewidth = 0.5, 
+             method = "lm", se = FALSE, show.legend = FALSE) 
+
+p4 <- pbase + 
+  geom_point(data = fullTab[which(fullTab$sigCol == "pink"),],
+             aes(x = L_l2fc, y = D_l2fc, fill = sigCol), color = "black", shape = 21) +
+  geom_smooth(data = fullTab[which(fullTab$sigCol == "pink"),],
+             aes(x = L_l2fc, y = D_l2fc, color = "black"), linewidth = 0.5,
+             method = "lm", se = FALSE, show.legend = FALSE) +
+  ylab(NULL) 
+
+
+# compare log baseMean of DEGs per method
+p5 <- ggplot() +
+  geom_boxplot(data = fullTab, aes(x = sigCol, y = log(D_baseMean), fill = sigCol),
+               outlier.stroke = 0.2) +
+  scale_fill_identity() +
+  theme_bw(base_size = 8) +
+  labs(title = "Log baseMean") +
+  xlab(NULL) +
+  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  ylab("Log baseMean") 
+
+# compare DESeq2 L2FC of DEGs
+p6 <- ggplot() +
+  geom_boxplot(data = fullTab, aes(x = sigCol, y = D_l2fc, fill = sigCol),
+               outlier.stroke = 0.2) +
+  scale_fill_identity() +
+  theme_bw(base_size = 8) +
+  labs(title = "DESeq2 L2FC") +
+  xlab(NULL) +
+  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  ylab("DESeq2 L2FC") 
+
+# compare limma L2FC of DEGs
+p7 <- ggplot() +
+  geom_boxplot(data = fullTab, aes(x = sigCol, y = L_l2fc, fill = sigCol),
+               outlier.stroke = 0.2) +
+  scale_fill_identity() +
+  theme_bw(base_size = 8) +
+  labs(title = "limma L2FC") +
+  xlab(NULL) +
+  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  ylab("limma L2FC") 
+  
+bulk$plots$compareMethod1 <- ggarrange(p1,p2,p3,p4, 
+                                       ncol = 2, nrow = 2,
+                                       common.legend = TRUE)
+bulk$plots$compareMethod2 <- ggarrange(p5,p6,p7, 
+                                       ncol = 3, nrow = 1,
+                                       common.legend = TRUE)
+```
+
+## 4.2 - Plot comparison
+```{r compare DESeq2 and Limma results, width = 10, height = 10, message = FALSE}
+bulk$plots$compareMethod1 
+bulk$plots$compareMethod2
+```
+
+# Part 5 - Export objects
+
+## 5.1 - Prep for export
+```{r prep for export}
+## increase report count by 1
+bulk$config$reportNumber <- sprintf("%02d", as.numeric(bulk$config$reportNumber) + 1)  
+
+## make subdirectories for `outputs` and `rds`
+subdir <- paste0("report-", bulk$config$reportNumber)
+
+if (!dir.exists(here("outputs/", subdir))) {
+  dir.create(here("outputs/", subdir))}
+
+if (!dir.exists(here("rds/", subdir))) {
+  dir.create(here("rds/", subdir))}
+```
+
+## 5.2 - Write `bulk` rds
+```{r}
+bulk %>%
+  write_rds(., here("rds", subdir, paste0("bulk-", getDate(), ".rds")))
+```
+
+## 5.3 - Export results table from limma
+```{r export limma DEGs, warning=FALSE}
+resTab_filename_limma <- paste0(
+  bulk$config$project, "-",
+  bulk$config$reportNumber, "-",
+  "DE_results_limma-", getDate(), ".xlsx")
+
+splitResTab <-  bulk$degTab$limma %>% 
+  split(.$contrast) %>%
+  lapply(.,function(x)
+    {x %>% select(contrast,gene,log2FoldChange,AveExpr,pvalue,padj)})
+
+limmaResTab_export <- c(list("Summary" = bulk$tables$limma$nDEGSummary,
+                           "AllResults" = bulk$degTab$limma[,c("contrast","gene","log2FoldChange","AveExpr","pvalue","padj")]),
+                        splitResTab)
+
+writexl::write_xlsx(limmaResTab_export, here("outputs", subdir, resTab_filename_limma))
+```
+
+## 5.4 - Export DESeq2 results table
+```{r export DESeq2 DEGs}
+resTab_filename_deseq <- paste0(
+  bulk$config$project, "-",
+  bulk$config$reportNumber, "-",
+  "DE_results_DESeq2-",getDate(), ".xlsx")
+
+deseqResTab_export <- c(list("Summary" = bulk$tables$deseq$nDEGSummary,
+                           "AllResults" = bulk$degTab$deseq[,c("contrast","gene","log2FoldChange","baseMean","pvalue","padj")]),
+                        bulk$deseq$contrasts)
+
+writexl::write_xlsx(deseqResTab_export ,here("outputs", subdir, resTab_filename_deseq))
+```
+
+# 6 - Render report
+
+```{r render, eval=FALSE}
+# set report file name
+report_filename <- paste0(bulk$config$project, "-", 
+                          bulk$config$reportNumber, "-",
+                          format(Sys.Date(), "%Y%m%d"))
+
+# HTML
+rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                  output_file = paste0(report_filename, "_compare.html"),
+                  output_dir = here('reports'),
+                  output_format = "rmdformats::robobook",
+                  #params = list(method="deseq"))
+                 #params = list(method="limma"))
+                  params = list(compare=TRUE))
+
+rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                  output_file = paste0(report_filename, "_deseq.html"),
+                  output_dir = here('reports'),
+                  output_format = "rmdformats::robobook",
+                  params = list(method="deseq"))
+                 #params = list(method="limma"))
+                  #params = list(compare=TRUE))
+
+rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                  output_file = paste0(report_filename, "_limma.html"),
+                  output_dir = here('reports'),
+                  output_format = "rmdformats::robobook",
+                  #params = list(method="deseq"))
+                  params = list(method="limma"))
+                  #params = list(compare=TRUE))
+
+# PDF
+tinytex::install_tinytex() # If it is already installed, will ask in terminal if you should reinstall
+rmarkdown::render(input = here("scripts/02-bulkRNA_DE.format.Rmd"),
+                  output_file = paste0(report_filename, ".pdf"),
+                  output_dir = here('reports'),
+                  output_format = "pdf_document",
+                  params = list(method="deseq"))
+                 # params = list(method="limma"))
+                 # params = list(compare=TRUE))
+```
