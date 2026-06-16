@@ -54,3 +54,7 @@ vignettes/*.pdf
 
 # VSCode
 settings.json
+.Rproj.user
+.positai
+.Rproj.user
+.positai
