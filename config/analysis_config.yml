@@ -1,0 +1,5 @@
+# Analysis title
+analysis: p22074_Peijian_Analysis
+# Design
+design: 'Group'
+alpha: 0.05

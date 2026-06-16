@@ -1,0 +1,523 @@
+---
+title: "`r project_name`: Report `r report_number` - Pseudobulk QC, DE & GSEA"
+author: |
+  | `r report_author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+```
+
+```{=html}
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+details > summary {
+  display: list-item;
+}
+</style>
+```
+
+The report is organized into three parts:
+
+1. Quality Control (data input, filtering by expression, PCA plotting and exporting counts table)
+2. Differential Expression (defining design formula and contrasts, running diagnostics and generating DEG plots and summaries) and 
+3. Gene Set Enrichment Analysis (against various different gene set lists).
+ 
+Please note that this `.html` file is best viewed when downloaded to your local machine and viewed in your internet browser (i.e. not on OneDrive). There is a table of contents on the left-hand side and some sections in the report include clickable tabs to organize the results. These will not show up if viewed on OneDrive.
+
+# Part 1 - QC
+
+In Part 1 of this report, we walk through the results of running a quality control analysis on the provided data.
+
+## 1 - Study design overview
+
+<!-- Here's a template for presenting two different alternative designs requested by the client. In many cases, only one is necessary, so just delete Design B. -->
+
+```{r, message=FALSE, warning=FALSE}
+bulk$md$sampleTable %>%
+  select(fileID, sampleID, subjectID, gender_site, batch) %>%
+  group_by(batch, gender_site) %>%
+    summarize(subjectIDs = paste0(subjectID, collapse = ", "),
+              n_subjects = n()) %>%
+  knitr::kable() %>% kableExtra::kable_styling()
+```
+
+## 2 - Mapping stats
+
+Outcomes from mapping reads to reference genome. Reads need to be 'identified' or successfully mapped to a single feature to be used for gene expression analysis.
+
+```{r mapping_plot, fig.width=16, fig.height=6}
+mappingBinsPlot(bulk$md$mapBins) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 90, vjust = 0.5, hjust = 1, size=6, color = sampleID_colors$color))
+```
+
+## 3 - Gene filtering by expression
+
+Genes with low or zero expression across most samples are not informative and removing them improves False Discovery Rate control and differential expression model fit. Here are the results of filtering genes based on expression. Genes retained for downstream analysis are in green (non-zero expression) or yellow (zero expression), and genes filtered from analysis are in orange (non-zero expression) and red (zero expression). 
+
+```{r, fig.height = 6, fig.width = 16}
+bulk_prefilt$dge$counts %>%
+    dplyr::as_tibble(rownames = "gene") %>%
+    dplyr::left_join(dplyr::tibble(gene = names(keep.exprs), keep = keep.exprs), 
+                     by = c("gene")) %>%
+    tidyr::pivot_longer(cols = -c("gene", "keep"), names_to = "sampleID", values_to = "counts") %>%
+    dplyr::mutate(sampleID = forcats::fct(.data$sampleID, levels = levels(bulk_prefilt$dge$samples$sampleID)),
+                  is_zero = .data$counts == 0) %>%
+    dplyr::group_by(.data$sampleID) %>%
+    dplyr::summarize(keep_zero = sum(.data$is_zero & .data$keep),
+                     keep_nonzero = sum(!.data$is_zero & .data$keep),
+                     remove_zero = sum(.data$is_zero & !.data$keep),
+                     remove_nonzero = sum(!.data$is_zero & !.data$keep)) %>%
+    dplyr::ungroup() %>%
+    tidyr::pivot_longer(cols = c(starts_with("keep_"), starts_with("remove_")), names_to = "cat", values_to = "n_genes") %>%
+    dplyr::mutate(cat = forcats::fct(.data$cat, levels = rev(c("keep_nonzero", "keep_zero", "remove_nonzero", "remove_zero")))) %>%
+    ggplot(aes(x = .data$sampleID, y = .data$n_genes, fill = .data$cat)) +
+    geom_bar(stat="identity") +
+    scale_fill_manual(name = "Filtering",
+                      values = c("keep_nonzero"="green2", "keep_zero"="yellow2",
+                                 "remove_nonzero"="orange", "remove_zero"="red"),
+                      breaks = c("keep_nonzero", "keep_zero",
+                                 "remove_nonzero", "remove_zero"),
+                      labels = c("Kept non-zero", "Kept zero",
+                                 "Removed non-zero", "Removed zero")) +
+    ylab("Gene counts") + xlab("Sample ID") +
+    theme_bw() +
+    theme(axis.text.x = ggtext::element_markdown(angle = 90, vjust = 0.5, hjust = 1, size=6, color = sampleID_colors$color))
+```
+
+## 4 - Library sizes of discarded and kept data {.tabset}
+
+### Library size (sum of counts)
+
+```{r, fig.height=6, fig.width=16, message=FALSE}
+bulk_prefilt$dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
+            by = c("gene")) %>%
+  pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+  mutate(sampleID = fct(sampleID, levels = levels(bulk_prefilt$dge$samples$sampleID))) %>%
+  group_by(sampleID, keep) %>%
+    summarize(lib.size = sum(counts)) %>%
+  ungroup() %>%
+  ggplot(aes(x = sampleID, y = lib.size, fill = keep)) +
+  geom_bar(stat="identity") +
+  ylab("Library size (sum of counts)") + xlab("Sample ID") +
+  theme_bw() +
+    theme(axis.text.x = ggtext::element_markdown(angle = 90, vjust = 0.5, hjust = 1, size=6, color = sampleID_colors$color))
+```
+
+### log10(Library size) {.tabset}
+
+```{r, fig.height=6, fig.width=16, message=FALSE}
+bulk_prefilt$dge$counts %>%
+  as_tibble(rownames = "gene") %>%
+  left_join(tibble(gene = names(keep.exprs), keep = keep.exprs), 
+            by = c("gene")) %>%
+  pivot_longer(cols = -c(gene, keep), names_to = "sampleID", values_to = "counts") %>%
+  mutate(sampleID = fct(sampleID, levels = levels(bulk_prefilt$dge$samples$sampleID))) %>%
+  group_by(sampleID, keep) %>%
+    summarize(lib.size = sum(counts)) %>%
+  ungroup() %>%
+  ggplot(aes(x = sampleID, y = lib.size, fill = keep)) +
+  geom_bar(stat="identity") +
+  scale_y_log10() +
+  ylab("log10(Library size)") + xlab("Sample ID") +
+  theme_bw() +
+    theme(axis.text.x = ggtext::element_markdown(angle = 90, vjust = 0.5, hjust = 1, size=6, color = sampleID_colors$color))
+```
+
+## 5 - PCA {.tabset}
+
+Exploring projections of expression profiles onto low dimensional space using a limited number of highly variable genes. This will give us an estimate of similarity between samples, but will not account for all genes.
+
+### No batch correction
+
+#### Plots
+
+```{r, fig.height=6, fig.width=12}
+lapply(names(pcas), function(x) pcas[[x]] + ggtitle(x)) %>%
+  ggpubr::ggarrange(plotlist=., ncol=3, common.legend = T, legend = "bottom")
+```
+
+
+#### Genes associated with PCs {.tabset}
+
+Top 20 genes associated with the first two PCs.
+
+##### PC1
+```{r}
+limma::topTable(pca12_fit, coef="xaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC2
+```{r}
+limma::topTable(pca12_fit, coef="yaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC3
+```{r}
+limma::topTable(pca34_fit, coef="xaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC4
+```{r}
+limma::topTable(pca34_fit, coef="yaxis", number = 20) %>%
+  knitr::kable()
+```
+
+### With batch correction
+
+#### Plots
+
+```{r, fig.height=6, fig.width=12}
+lapply(names(pcas_CBs), function(x) pcas_CBs[[x]] + ggtitle(x)) %>%
+  ggpubr::ggarrange(plotlist=., ncol=3, common.legend = T, legend = "bottom")
+```
+
+#### Genes associated with PCs {.tabset}
+
+Top 20 genes associated with the first two PCs.
+
+##### PC1
+```{r}
+limma::topTable(pca12_fit_CBs, coef="xaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC2
+```{r}
+limma::topTable(pca12_fit_CBs, coef="yaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC3
+```{r}
+limma::topTable(pca34_fit_CBs, coef="xaxis", number = 20) %>%
+  knitr::kable()
+```
+
+##### PC4
+```{r}
+limma::topTable(pca34_fit_CBs, coef="yaxis", number = 20) %>%
+  knitr::kable()
+```
+
+# Part 2 - DE
+
+Part 2 of this report is divided into sections focusing on model design, the definition of contrasts, some model fit quality control, and finally the differential expression results.
+
+A separate excel file, ``r resultsTable_filename``, is also provided with this report with the full results of the model for each contrast queried.
+
+Another excel file, ``r GSEA_filename``, is provided with the full results of the gene set enrichment analysis.
+
+## 1 - Defining the model formula and contrasts
+
+We treated gender_site and batch as fixed effects. The model formula can be represented as follows:
+
+`expression ~ gender_site(TGW_atl|CGM_atl|TGW_thai|CGM_thai) + batch(1|2)`
+
+In the sections below, we focus on the results for the following differential expression contrast:
+
+`TGWvsCGM = ((TGW_atl - CGM_atl) + (TGW_thai - CGM_thai))/2`
+`ATL_TGWvsCGM = TGW_atl - CGM_atl`
+`THAI_TGWvsCGM = TGW_thai - CGM_thai`
+`TGW_THAIvsATL = TGW_thai - TGW_atl`
+`CGM_THAIvsATL = CGM_thai - CGM_atl`
+
+## 2 - Differential expression quality control
+
+### 2.1 - Mean-difference ("MD") plot
+
+The logFC for each gene is plotted against the average abundance in log2-CPM.
+
+```{r, fig.width = 10, fig.height = 6}
+md_data <- resultsTable %>%
+    mutate(signif_dir = ifelse(padj >= fdr, "NotSig",
+                           ifelse(log2FoldChange < 0, "Down", "Up")) %>%
+             factor(., levels = c("NotSig", "Up", "Down")),
+           signif = padj < fdr)
+  
+ggplot() +
+  geom_point(data = filter(md_data, !signif),
+             aes(x = AveExpr, y = log2FoldChange), 
+             color = "black", size = 0.1) +
+  geom_point(data = filter(md_data, signif), 
+             aes(x = AveExpr, y = log2FoldChange, color = signif_dir), 
+             size = 1) +
+  ylim(-max(abs(md_data$log2FoldChange)), max(abs(md_data$log2FoldChange))) +
+  scale_color_manual(values = c("black", "red", "blue"), drop = FALSE) +
+  theme_bw() +
+  facet_wrap(~contrast)
+```
+
+### 2.2 - P-value distributions
+
+If the model is parameterized correctly and there is signal in the data, we expect to see an exponential peak on the left and a flat distribution to the right. The genes that are statistically significant (and pass false discovery rate correction) will typically be a subset of the genes in the right-most bin.
+
+```{r, fig.width = 10, fig.height = 6}
+resultsTable %>%
+      mutate(!!paste0("pBH < ", fdr) := ifelse(padj < fdr, "TRUE", "FALSE") %>%
+               factor(., levels = c("TRUE", "FALSE"))) %>%
+    ggplot(data = ., aes(x = pvalue, fill = .data[[paste0("pBH < ", fdr)]])) +
+      geom_histogram(breaks = seq(0,1,0.01)) +
+      scale_fill_manual(values = c("red", "black"), drop=FALSE) +
+      theme_bw() +
+    facet_wrap(~contrast, scales = "free_y")
+```
+
+### 2.3 - Q-value calculation {.tabset}
+
+If the p-value distribution looks ok, then we can control false discovery rate by calculating *q-values* using the Storey-Tibshirani procedure (implemented in the `qvalue` R package). ***The q-value is the expected proportion of "significant" tests (q-val < the threshold) that are expected to be false positives.*** The number of expected false positives is thus the q-value x the number of significant genes.
+
+Defining significant DEGs from *q-values* is typically more statistically powerful than the Benjamini-Hochberg procedure and allows us to explicitly consider (and report) the number of expected false positives at any given q-value cut-off. 
+
+```{r}
+qval_chunk_text <- c(
+'#### {{contrast_i}} {.tabset}\n',
+'##### Diagnostic plots\n',
+'We can consult the top right and bottom right plots to determine the q-value cut-off that we are comfortable with given our tolerance for false-positives.\n',
+'```{r}\n',
+'filter(resultsTable, contrast == "{{contrast_i}}")$pvalue %>%
+  qvalue() %>% plot()',
+'```\n',
+'##### Summary table\n',
+'```{r}\n',
+'filter(resultsTable, contrast == "{{contrast_i}}")$pvalue %>%
+  qvalue() %>% summary()',
+'```\n')
+```
+
+```{r qvalues, results='asis'}
+out <- NULL
+for (contrast_i in colnames(contr.matrix)) {
+  out <- c(out, knitr::knit_expand(text = qval_chunk_text))
+}
+
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+```
+
+
+
+
+## 3 - Differential expression results
+
+Note that we have sent an excel spreadsheet called ``r resultsTable_filename`` separately with the full list of genes and stats for each contrast of interest.
+
+The first sheet of ``r resultsTable_filename`` summarizes the number of differentially expressed genes (Benjamini-Hochberg adjusted p-value < `r fdr`) in each contrast.
+
+Genes that were removed during filtering will have empty entries in the results table.
+
+The sections below summarize the results graphically. Only the significant DEGs are included.
+
+
+### 3.1 - Summary of DEG counts {.tabset}
+
+#### Table
+```{r}
+n_deg_summary %>%
+  mutate(signif_signs = paste0(signif_up, " ↑ / ", signif_down, " ↓")) %>%
+  select(contrast, signif_signs) %>%
+  knitr::kable()
+```
+
+#### Bar plots
+
+```{r, fig.width = 6, fig.height = 6}
+n_deg_summary %>%
+  pivot_longer(cols = c(signif_down, signif_up),
+               names_to = "sign",
+               values_to = "n_signif") %>%
+  mutate(n_signif = ifelse(sign == "signif_down",
+                           -n_signif, n_signif)) %>%
+  ggplot(aes(y = fct_rev(contrast), x = n_signif, fill = sign)) +
+  geom_bar(stat="identity") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  theme_bw() +
+  ylab("contrast")
+```
+
+### 3.2 - Tables of top `r n_genes` significant genes {.tabset}
+
+```{r}
+resTable_chunk_text <- c(
+'#### {{contrast_i}} {.tabset}\n',
+'```{r}',
+'resultsTable %>%
+  as_tibble() %>%
+  filter(contrast == "{{contrast_i}}",
+         qvalue < fdr) %>%
+  arrange(pvalue) %>%
+  slice_head(n = n_genes) %>%
+  rename(pBH = padj) %>%
+  knitr::kable()',
+'```\n',
+'\n')
+```
+
+```{r deg_tables, results='asis'}
+out <- NULL
+for (contrast_i in colnames(contr.matrix)) {
+  out <- c(out, knitr::knit_expand(text = resTable_chunk_text))
+}
+
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+```
+
+### 3.3 - Heatmaps of the top `r n_genes` genes by p-value {.tabset}
+
+```{r}
+heatmaps_chunk_text <- c(
+'#### {{contrast_i}} {.tabset}\n',
+'Note that many of the genes here are *not* statistically significantly expressed. The significantly upregulated genes in TGW are labeled in red and the significantly downregulated genes are labeled in blue.\n',
+'There are two tabs below. The first is the raw counts with no batch correction applied. The second shows batch-corrected counts using an algorithm implemented in the `ComBat-Seq()` function from the `sva` R package. Note that the differential expression analysis we\'ve conducted accounts for batch in the modeling; the below plots are just two equally valid alternative ways of visualizing the counts depending on your aims for communicating the results.\n',
+'```{r}\n',
+'sample_tbl <- bulk$dge$samples %>%
+  dplyr::select(sampleID, gender_site, batch) %>%
+  mutate(color = "black") %>%
+  dplyr::rename(group = gender_site)
+
+gene_tbl <- resultsTable %>%
+  getTopDegTbl(., contrast_i = "{{contrast_i}}", groupID = "gender_site", 
+                 arrange_by = "pvalue", direction = "unequal", padj_cutoff = NULL,
+                 slice_n = n_genes, filter_pattern = NULL) %>%
+    select(gene, padj, l2fc = log2FoldChange) %>%
+    mutate(color = ifelse(is.na(padj), "grey",
+                          ifelse(padj >= fdr, "black",
+                                 ifelse(l2fc > 0, "red",
+                                        ifelse(l2fc < 0, "blue",
+                                               NA)))))',
+'```\n',
+'##### No batch correction\n',
+'```{r, fig.height = 10, fig.width = 32}\n',
+'print(
+  plotHeatmap(exprs_mat = bulk$dge$lcpm, gene_tbl = gene_tbl, sample_tbl = sample_tbl,
+              sampleID = "sampleID", cluster_genes = TRUE, cluster_samples = FALSE)
+)',
+'```\n',
+'##### With batch correction\n',
+'```{r, fig.height = 10, fig.width = 32}\n',
+'print(
+  plotHeatmap(exprs_mat = bulk_CBs$dge$lcpm, gene_tbl = gene_tbl, sample_tbl = sample_tbl,
+              sampleID = "sampleID", cluster_genes = TRUE, cluster_samples = FALSE)
+)',
+'```\n'
+)
+```
+
+```{r heatmaps, results='asis'}
+out <- NULL
+for (contrast_i in colnames(contr.matrix)) {
+  out <- c(out, knitr::knit_expand(text = heatmaps_chunk_text))
+}
+
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+```
+
+
+# Part 3 - GSEA
+
+## 1 - Gene set enrichment analysis {.tabset}
+
+I tried 3 different gene set lists from the msigdb database: Hallmark (H), Gene Ontology Biological Process (GOBP), and canonical pathways (CP). See details at the [msigdb website](https://www.gsea-msigdb.org/gsea/msigdb/human/genesets.jsp).
+
+For each database I'm showing a "gsea dot plot" with the top 30 gene sets with uncorrected pval < 0.1:
+
+- color = `pval` (uncorrected p-value)
+- size of dot = `n_leadingEdge` (Number of genes in the leading edge)
+- x axis = `NES` (normalized enrichment score)
+- y axis = `pathway`
+
+There's also a stats table for each with the top `r n_pathways` gene sets.
+
+The stats tables have also been collected in a separate excel file, ``r GSEA_filename``.
+
+```{r}
+chunk_text_gsea_summary <- c(
+'##### **Stats table**\n',
+'```{r, message=FALSE, warning=FALSE}',
+'gsea_top_signif <- gsea_results[["{{db}}"]][["{{contr}}"]] %>%
+    as_tibble() %>%
+    filter(pval < 0.1, size >= 15) %>%
+    slice_head(n = {{n_pathways}}) %>%
+    mutate(term = str_replace_all(string = pathway, pattern = "_", replacement = " "), 
+           n_leadingEdge = str_count(leadingEdge, pattern = ",") + 1) %>%
+    rowwise()  %>%
+    mutate(leading_edge = paste(leadingEdge, collapse = ", "))',
+'if (nrow(gsea_top_signif) > 0) {
+  gsea_top_signif %>%
+    dplyr::select(term, ES, NES, pval, size, n_leadingEdge, leading_edge) %>%
+    knitr::kable()
+} else {
+  print("No functional terms with pval < 0.1")
+}',
+'```\n')
+
+chunk_text_gsea_dotplot <- c(
+'##### **GSEA dot plot**\n',
+'```{r, message=FALSE, warning=FALSE, fig.width = 15, fig.height = 8}',
+'gsea_top_signif <- gsea_results[["{{db}}"]][["{{contr}}"]] %>%
+  as_tibble() %>%
+  mutate(term = pathway,
+         n_leadingEdge = str_count(leadingEdge, pattern = ",") + 1) %>%
+  filter(pval < 0.1) %>%
+  slice_head(n = {{n_pathways}})',
+'if (nrow(gsea_top_signif) > 0) {
+  gsea_top_signif %>%
+    ggplot(aes(x = NES, y = fct_reorder(term, NES), size = n_leadingEdge, color = pval)) +
+    geom_point() +
+    scale_color_gradient(low = "red", high = "blue") +
+    theme_bw() +
+    scale_y_discrete(labels = scales::label_wrap(10)) +
+    ylab("term") +
+    xlim(-2.5,2.5)
+} else {
+  print("No functional terms with pval < 0.1")
+}',
+'```\n')
+```
+
+
+```{r gsea_knit_expand, results='asis'}
+## Get a "grid" (as in `expand.grid()`) of all combinations of db, cluster, and contrast so we can pick any combination arbitrarily
+gsea_results_grid <- gsea_results %>% 
+    lapply(., function(y) {
+      y %>% bind_rows(.id = "contrast")
+  }) %>% bind_rows(.id = "db") %>%
+  mutate(contrast = fct(contrast, levels = levels(resultsTable$contrast))) %>%
+ arrange(db, contrast)
+  
+out <- NULL
+for (contr in unique(gsea_results_grid$contrast)) {
+  out <- c(out, paste0('### ', contr, ' {.tabset}\n\n'),
+           paste0('Results for each of the ', length(unique(gsea_results_grid$db)), ' databases are shown in separate, clickable tabs below.\n'))
+  for (db in unique(gsea_results_grid$db)) {
+    out <- c(out, paste0('#### ', db, '\n\n'))
+    out <- c(out, knitr::knit_expand(text = chunk_text_gsea_dotplot))
+    out <- c(out, knitr::knit_expand(text = chunk_text_gsea_summary))
+  }
+  out <- c(out, '***\n')
+}
+cat(knitr::knit_child(text = out, quiet = TRUE), sep = '\n')
+
+```
+
+
+

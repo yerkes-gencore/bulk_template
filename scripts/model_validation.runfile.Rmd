@@ -1,0 +1,325 @@
+---
+title: "model_validation"
+author: "ENPRC Gencore"
+date:  "`r Sys.Date()`"
+output: 
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE,
+                      message = FALSE, 
+                      echo=FALSE,
+                      fig.width = 6,
+                      fig.height = 4,
+                      dev='png')
+library(tidyverse)    ## General logic and processing
+# library(DESeq2)       ## Makes us have a job
+library(here)         ## For consistent directory structures
+library(edgeR)
+library(DT)
+library(reshape2)
+library(gencoreBulk)
+```
+
+# Read metadata
+
+```{r}
+obj <- readRDS(here('saved_rds_objects/analysis_post_QC.Rds'))
+```
+
+```{r}
+obj$dds$timepoint <- factor(obj$dds$timepoint, levels = c('D0', 'D2', 'D4', 'D8', 'D14', 'D28'))
+obj$dds$Group <- factor(obj$dds$Group, levels = c('Bolus', 'Escalating'))
+obj$dds$ind <- factor(plyr::mapvalues(obj$dds$individual,
+                                         from = c('RAt19', 'RCl19', 'RKd19', 'RKf19', 'RKn19',
+                                                  'RFg19', 'RKr19', 'ROj19', 'RPm19', 'RZm19'),
+                                         to = c(1:5, 1:5)))
+```
+
+```{r}
+metadata <- as.data.frame(obj$dds@colData)
+exp_data <- obj$dds
+plots <- list()
+```
+
+```{r}
+metadata %>%
+  select(-c(FileID, SampleID, sizeFactor, replaceable))
+```
+
+```{r}
+relevant_cols <- colnames(metadata %>% select(-c(FileID, SampleID, sizeFactor, replaceable)))
+metadata_summary <- lapply(relevant_cols, function(x) table(unlist((metadata[[x]]))))
+names(metadata_summary) <- relevant_cols
+metadata_summary
+```
+
+```{r}
+table(metadata$individual, metadata$timepoint)
+```
+
+```{r}
+table(metadata$Group, metadata$timepoint)
+```
+
+```{r}
+table(metadata$individual, metadata$ind, metadata$Group)
+```
+
+# Design
+
+```{r}
+design_formula <- as.formula('~ day + grp + grp:day')
+design_matrix  <- stats::model.matrix(design_formula, data = metadata)
+colnames(design_matrix)
+```
+
+```{r}
+design_matrix
+```
+
+## Fit design
+
+### DESeq
+
+```{r}
+design(obj$dds) <- design_formula
+stopifnot(colnames(exp_data) == metadata$FileID)
+obj$dds <- DESeq2::DESeq(obj$dds)
+```
+
+### edgeR
+
+```{r}
+model_results <- edgeR::voomLmFit(counts = obj$dge,
+                              design = design_matrix,
+                              block = metadata$SubjectID,
+                              sample.weights = TRUE)
+```
+
+# Define contrasts
+
+Explicitly write out full contrast formulas, including terms that will cancel and
+expanded interaction terms.
+This avoids mistakes and facilitates plotting.
+
+You do not have to use valid R names at this stage, as that will be corrected
+for later. Just use the colnames of the design matrix.
+
+```{r}
+colnames(design_matrix)
+```
+
+Use spaces around terms to make sure they are detected by term extraction
+functions for plotting (WIP)
+
+```{r}
+contrast_matrix_expanded <- data.frame(
+  contrast_names = c(
+    'Bolus_D2',
+    'Bolus_D4',
+    'Bolus_D8',
+    'Bolus_D14',
+    'Bolus_D28',
+    'Escalating_D2',
+    'Escalating_D4',
+    'Escalating_D8',
+    'Escalating_D14',
+    'Escalating_D28',
+    'D2_Escalating.v.Bolus',
+    'D4_Escalating.v.Bolus',
+    'D8_Escalating.v.Bolus',
+    'D14_Escalating.v.Bolus',
+    'D28_Escalating.v.Bolus'
+  ),
+  numerators = c(
+    'timepointD2',
+    'timepointD4',
+    'timepointD8',
+    'timepointD14',
+    'timepointD28',
+    'GroupEscalating + timepointD2 + timepointD2.GroupEscalating',
+    'GroupEscalating + timepointD4 + timepointD4.GroupEscalating',
+    'GroupEscalating + timepointD8 + timepointD8.GroupEscalating',
+    'GroupEscalating + timepointD14 + timepointD14.GroupEscalating',
+    'GroupEscalating + timepointD28 + timepointD28.GroupEscalating',
+    '( GroupEscalating + timepointD2 + timepointD2.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD4 + timepointD4.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD8 + timepointD8.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD14 + timepointD14.GroupEscalating ) - ( GroupEscalating + timepointD0 )',
+    '( GroupEscalating + timepointD28 + timepointD28.GroupEscalating ) - ( GroupEscalating + timepointD0 )'
+  ),
+  denominators = c(
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'GroupEscalating + timepointD0',
+    'timepointD2 - timepointD0',
+    'timepointD4 - timepointD0',
+    'timepointD8 - timepointD0',
+    'timepointD14 - timepointD0',
+    'timepointD28 - timepointD0'
+  )
+)
+```
+
+
+```{r}
+## have to make valid names first
+## Current workflow requires user to make valid names instead
+contrast_matrix <- contrast_matrix_expanded
+# contrast_matrix$denominators <-
+#   sapply(contrast_matrix$denominators, function(x) {
+#     paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+#   })
+# contrast_matrix$numerators <-
+#   sapply(contrast_matrix$numerators, function(x) {
+#     paste(make.names(unlist(strsplit(x, perl = TRUE, split = '\\s*\\+\\s*'))), collapse = ' + ')
+#   })
+
+## Then make contrasts
+contrast_matrix <- apply(contrast_matrix, MARGIN = 1, function(row) {
+  paste0('(', row[2], ') - (', row[3], ')')
+})
+contrast_matrix <- limma::makeContrasts(contrasts = contrast_matrix,
+    levels = make.names(colnames(design_matrix)))
+colnames(contrast_matrix) <- contrast_matrix_expanded$contrast_names
+contrast_matrix
+```
+
+# Extract contrasts
+
+## DESeq
+
+```{r}
+model_results <- apply(contrast_matrix, 2, gencoreBulk::extractFilteredDESeqResults, dds = obj$dds)
+names(model_results) <- colnames(contrast_matrix)
+```
+
+## EdgeR
+
+```{r}
+## Re-orient the fitted model object from the coefficients of the original design matrix to the set of contrasts defined above in contr.matrix
+extracted_contrasts <- contrasts.fit(model_results, contrasts = contrast_matrix)
+  ## Run empirical Bayes moderation; borrowing information across all the genes to obtain more precise estimates of gene-wise variability
+extracted_contrasts <- eBayes(extracted_contrasts, robust=TRUE)
+  ## Plot the model's residual variances against average expression values; demonstrating that the variance is no longer dependent on the mean expression level
+plotSA(extracted_contrasts, main="Final model: Mean-variance trend")
+  ## Identify which genes are significantly differentially expressed for each contrast from a fit object containing p-values and test statistics
+extracted_contrasts$sig <- decideTests(extracted_contrasts, lfc = 0)
+```
+
+```{r}
+createResTables <- function(obj) {
+  resultsTables <- list()
+  for (contrast in colnames(obj$contrasts)) {
+    resultsTables[[contrast]] <- topTable(obj, coef = contrast, n = Inf) %>%
+      # as_tibble(rownames = "gene") %>%
+      dplyr::rename(log2FoldChange = logFC, pvalue = P.Value, padj = adj.P.Val)
+  }
+  return(resultsTables)
+}
+
+# Arrange by cluster, then by contrast
+model_results <- createResTables(extracted_contrasts)
+
+# Put all the results in a single table
+model_results_joined <- lapply(resTables, function(one_tbl) {
+    one_tbl %>%
+    rownames_to_column(var = "gene")
+  }) %>% bind_rows(., .id = "contrast")
+```
+
+# Check results
+
+```{r}
+model_results[[1]] %>% head()
+```
+
+## Summary table
+
+```{r}
+## Not very generalized yet
+tmp <- data.table::rbindlist(lapply(model_results, function(x) {
+  up <- x %>% as.data.frame() %>% filter(log2FoldChange > 0) %>% filter(padj<0.05) %>% nrow()
+  down <- x %>% as.data.frame() %>% filter(log2FoldChange < 0) %>% filter(padj<0.05) %>% nrow()
+  return(list(up=up, down=down))
+}))
+
+tmp <- cbind(timepoint = c('D2', 'D4', 'D8', 'D14', 'D28'), tmp[1:5,], tmp[6:10,], tmp[11:15,])
+plots[['overall_table']] <- tmp %>%
+  knitr::kable(digits = 3) %>%
+  kableExtra::add_header_above(c('', 'Bolus' = 2, 'Escalating' = 2, 'Interaction' = 2))
+plots[['overall_table']]
+```
+
+# Visualize coefficients (EdgeR, WIP)
+
+Plot expression boxplots for quick inspections
+
+```{r}
+plotGeneExpression('JUN',
+                   counts =  model_results$EList$E,
+                   metadata = model_results$targets,
+                   grouping = 'grp.day',
+                   subsetting = 'day',
+                   subsets = 'D00') 
+```
+
+You can try to add coefficient terms too to see if they track with your expectations
+
+```{r}
+plotGeneExpression(gene = 'JUN', 
+               counts = model_results$EList$E,
+               metadata = model_results$targets,
+               grouping = 'grp',
+               subsetting = 'day', subsets = 'D28') +
+   plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_results$coefficients)  
+## Or you can return the data for manual plotting
+arrow_coords <- plotModelCoeffs(gene = 'JUN', expr = contrast_matrix_expanded[5,2] , coefficients = model_results$coefficients, data_only = TRUE)  
+## Can edit values here if desired, such as X coordinates
+## arrow_coords$x = 0.5
+
+plotGeneExpression(gene = 'JUN', 
+               counts = model_results$EList$E,
+               metadata = model_results$targets,
+               grouping = 'grp',
+               subsetting = 'day', subsets = 'D28') +
+  ## Then manually create the arrows
+   ggplot2::geom_segment(data = arrow_coords, 
+                        aes(x = x,
+                            xend = x,
+                            y = y, 
+                            yend = yend,
+                            color = terms),
+                        arrow = ggplot2::arrow()) 
+```
+
+# Render
+
+```{r}
+rmarkdown::render(here::here('scripts/model_validation.format.Rmd'),
+                  output_file = 'model_validation.html',
+                  output_dir = here::here('reports'),
+                  params = list(
+                    title = 'Bulk RNA Analysis Report')
+                  )
+```
+
+# Save model
+
+```{r}
+saveRDS(obj$dds, here('rds/obj-post_model_fit.Rds'))
+
+saveRDS(model_results, here('rds/extracted_model_results.Rds'))
+```
+

@@ -1,0 +1,2 @@
+# Files to ignore when initializing renv project. Helps avoid issues tracing dependencies with non-traditional R scripts
+R/results_chunk_template.Rmd
