@@ -229,11 +229,15 @@ rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
 ```
 
 ## 1.3 - Add design to `bulk` object
-By default, this template uses `grp` for cross-sectional studies and `grp.tPt` for longitudinal studies.
+By default, this template uses `grp` for cross-sectional studies and `grp.tPt` for longitudinal studies (aka "group" in the DGElist). Default may not work for your project, so modify as needed. 
 
-This is based on what you set your `group` to be when you made the DGElist
+This initial design is potentially important for gene filtering, so you should probably include most of the important variables. 
+You can choose a different design later when you perform analyses so that your contrast selection goes smoothly. 
 
-Default may not work for your project. Modify as needed.
+You should not include subjectID in this section, since it will be blocked later. If you are concerned about variables such as batch/technician etc, those can be added.
+
+More complex design example:
+`~ 0 + grp.tPt*sex` (equivalent to `~ 0 + grp.tPt + sex + grp.tPt:sex`)
 
 ```{r set design}
 bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
@@ -251,11 +255,11 @@ bulk$plots$qc$pMapBins <- mappingBinsPlot(bulk$md$mapBins) +
         plot.title = element_text(face = "bold", size = 20),
         legend.title = element_text(face = "bold", size = 12)) +
   guides(fill = guide_legend(direction = "horizontal",
-                            # position = "bottom", # useless until we update R version
+                             position = "bottom", 
                              title.position = "top")) 
 
 # view plot
-ggarrange(bulk$plots$qc$pMapBins, legend = "bottom")
+bulk$plots$qc$pMapBins
 ```
 
 ## 2.2 - Filter by expression
@@ -309,7 +313,8 @@ bulk$plots$qc$pGeneFilt <- bulk$prefilt_dge$counts %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6),
         plot.title = element_text(face = "bold", size = 20),
         axis.title.y = element_text(face = "bold"),
-        legend.text = element_text(size = 12))
+        legend.text = element_text(size = 12),
+        legend.position = "bottom")
 
   
 ## library size plot
@@ -335,7 +340,8 @@ bulk$plots$qc$pLibSize <- bulk$prefilt_dge$counts %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6),
         plot.title = element_text(face = "bold", size = 20),
         axis.title.y = element_text(face = "bold"),
-        legend.text = element_text(size = 12))
+        legend.text = element_text(size = 12),
+        legend.position = "bottom")
 
 ## log library size plot
 bulk$plots$qc$pLogLibSize <- bulk$plots$qc$pLibSize +
@@ -346,18 +352,20 @@ bulk$plots$qc$pLogLibSize <- bulk$plots$qc$pLibSize +
 
 ### 2.3.2 - View filtering and library size plots
 ```{r plot filtering plots, fig.height=5, fig.width=12}
-ggarrange(bulk$plots$qc$pGeneFilt, legend = "bottom")
-ggarrange(bulk$plots$qc$pLibSize, legend = "bottom")
-ggarrange(bulk$plots$qc$pLogLibSize, legend = "bottom")
+bulk$plots$qc$pGeneFilt
+bulk$plots$qc$pLibSize
+bulk$plots$qc$pLogLibSize
 ```
 
 ## 2.4 - Check globin expression
 As a quality check, this section pulls out globin-related genes to check for contamination
 ```{r check globin}
+globinGenes <- c('HBA', 'HBA1', 'HBA2', 'HBB', 'HBD', 'HBE1', 'HBG1', 'HBG2', 'HBM', 'HBQ1', 'HBZ', 'HBZP',
+                 'Hbb-y', 'Hbb-bh1', 'Hbb-b1', 'Hbb-b2', 'Hba-z', 'Hba-a1', 'Hba-a2')
 ## globin dataframe
 bulk$plots$qc$pGlobinBars <- bulk$dge$counts %>%
   as_tibble(rownames = "gene") %>%
-  dplyr::mutate(globin = factor(gene %in% c("HBE1","HBA","B2M"), 
+  dplyr::mutate(globin = factor(gene %in% globinGenes, 
                                 levels = c("TRUE","FALSE"))) %>%
   dplyr::mutate(globin = recode(globin, 
                                 "TRUE" = "globin", "FALSE" = "not_globin")) %>%
@@ -377,7 +385,7 @@ bulk$plots$qc$pGlobinBars <- bulk$dge$counts %>%
 ## violin plot of percent globin
 bulk$plots$qc$pGlobinVln <- bulk$dge$counts %>%
   as_tibble(rownames = "gene") %>%
-  dplyr::mutate(globin = factor(gene %in% c("HBE1","HBA","B2M"), 
+  dplyr::mutate(globin = factor(gene %in% globinGenes, 
                                 levels = c("TRUE","FALSE"))) %>%
   dplyr::mutate(globin = recode(globin, 
                                 "TRUE" = "globin", "FALSE" = "not_globin")) %>%
