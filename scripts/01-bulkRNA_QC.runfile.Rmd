@@ -23,6 +23,7 @@ library(edgeR)
 library(msigdbr)
 library(fgsea)
 library(gencoreBulk)
+library(vegan)
 
 # functional
 library(tidyverse)
@@ -43,11 +44,23 @@ library(ggplotify)
 library(ggh4x)
 library(patchwork)
 library(plotly)
+library(viridis)
 
-## custom functions
-source(here("R/limmaEdgeR_functions.R")) 
-source(here("R/heatmap_functions.R"))
-source(here("R/QC_functions.R"))
+### note: I am trying out keeping all of my functions in separate R files. 
+###       This does mean they need to be sourced separately, but it makes it a little easier to view and update them 
+#### old:
+#source(here("R/limmaEdgeR_functions.R")) 
+#source(here("R/heatmap_functions.R"))
+#source(here("R/QC_functions.R"))
+
+#### semi-in-use
+source(here("R/fitVoomLm.R"))
+
+#### In use:
+source(here("R/ggplotMDSv2.R"))
+source(here("R/checkRLEv2.R"))
+source(here("R/createResTable.R"))
+source(here("R/getTopDegTbl.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -436,79 +449,61 @@ If `x_genes` are chosen from pairwise comparisons of all samples, then a PCoA pl
 ## we will be pulling out the first 4 Principal Components (PCs)
 dims_list <- list("1v2"=c(1,2), "2v3"=c(2,3), "3v4"=c(3,4))
 
-## generate PCA plots
-bulk$plots$qc$pPCA <- lapply(dims_list, function(dims) {
-  ggplotMDS(bulk$dge, dims = dims, 
-            group = "grp", 
+bulk$plots$qc$limmaPCA <- lapply(dims_list, function(dims) {
+  ggplotMDSv2(bulk$dge, dims = dims,
             gene.selection = "common", 
+            nDEGs = 20,
             show.labels = FALSE,
             sampleID = "sampleID", 
-            color = "grp", 
-            shape = if(bulk$config$longitudinal==TRUE){"tPt"}else{NULL}, 
-            path = "subjectID", 
-            alpha = 1) +
-    scale_color_brewer(palette = "Set1")
-})
-
-## find genes associated with PCs 1 & 2
-pca12_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
-                             gene.selection = "common", dim.plot = c(1,2))
-pca12_design <- cbind(Intercept=1,xaxis=pca12_data$x,yaxis=pca12_data$y)
-pca12_fit <- edgeR::voomLmFit(bulk$dge, design = pca12_design)
-pca12_fit <- limma::eBayes(pca12_fit)
-bulk$tables$pc1_degs <- limma::topTable(pca12_fit, coef="xaxis", number = 10)
-bulk$tables$pc2_degs <- limma::topTable(pca12_fit, coef="yaxis", number = 10)
-
-## find genes associated with PCs 3 & 4
-pca34_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
-                             gene.selection = "common", dim.plot = c(1,2))
-pca34_design <- cbind(Intercept=1,xaxis=pca34_data$x,yaxis=pca34_data$y)
-pca34_fit <- edgeR::voomLmFit(bulk$dge, design = pca34_design)
-pca34_fit <- limma::eBayes(pca34_fit)
-bulk$tables$pc3_degs <- limma::topTable(pca34_fit, coef="xaxis", number = 10)
-bulk$tables$pc4_degs <- limma::topTable(pca34_fit, coef="yaxis", number = 10)
+            color = "group", 
+            shape = "sex", 
+            alpha = 1)})
 
 ## plot PCAs
-bulk$plots$qc$pPCA
+lapply(bulk$plots$qc$limmaPCA, function(x){
+# default ggplot2 color scheme
+  # x$ord + (ggtexttable(x$envfit, rows = NULL))
+# better color scheme
+  (x$ord + 
+      viridis::scale_color_viridis(option = 'turbo', discrete=TRUE)) + 
+    (ggtexttable(x$envfit, rows = NULL))
+})
+
+## view DEGs associated with the PCs
+bulk$plots$qc$limmaPCA$`1v2`$PC1_DEGs
+bulk$plots$qc$limmaPCA$`1v2`$PC2_DEGs
+bulk$plots$qc$limmaPCA$`3v4`$PC3_DEGs
+bulk$plots$qc$limmaPCA$`3v4`$PC4_DEGs
 ```
 
 ## 3.2 - PCoA
 
 ```{r PCoA, fig.width=8, fig.height=8}
-## Generate plots
-bulk$plots$qc$pPCoA <- lapply(dims_list, function(dims) {
-  ggplotMDS(bulk$dge, dims = dims, 
-            group = "grp", 
+bulk$plots$qc$limmaPCoA <- lapply(dims_list, function(dims) {
+  ggplotMDSv2(bulk$dge, dims = dims,
             gene.selection = "pairwise", 
+            nDEGs = 20,
             show.labels = FALSE,
             sampleID = "sampleID", 
-            color = "grp", 
-            shape = if(bulk$config$longitudinal==TRUE){"tPt"}else{NULL}, 
-            path = "subjectID", 
-            alpha = 1) +
-    scale_color_brewer(palette = "Set1")
+            color = "group", 
+            shape = "sex", 
+            alpha = 1)})
+
+## plot PCAs
+lapply(bulk$plots$qc$limmaPCoA, function(x){
+# default ggplot2 color scheme
+  # x$ord + (ggtexttable(x$envfit, rows = NULL))
+# better color scheme
+  (x$ord + 
+      viridis::scale_color_viridis(option = 'turbo', discrete=TRUE)) + 
+    (ggtexttable(x$envfit, rows = NULL))
 })
 
-## find genes associated with PCs 1 & 2
-pcoa12_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
-                             gene.selection = "pairwise", dim.plot = c(1,2))
-pcoa12_design <- cbind(Intercept=1,xaxis=pcoa12_data$x,yaxis=pcoa12_data$y)
-pcoa12_fit <- edgeR::voomLmFit(bulk$dge, design = pcoa12_design)
-pcoa12_fit <- limma::eBayes(pcoa12_fit)
-bulk$tables$pcoa1_degs <- limma::topTable(pcoa12_fit, coef="xaxis", number = 10)
-bulk$tables$pcoa2_degs <- limma::topTable(pcoa12_fit, coef="yaxis", number = 10)
-
-## find genes associated with PCs 3 & 4
-pcoa34_data <- limma::plotMDS(bulk$dge, top = 500, plot = FALSE, 
-                             gene.selection = "pairwise", dim.plot = c(1,2))
-pcoa34_design <- cbind(Intercept=1,xaxis=pcoa34_data$x,yaxis=pcoa34_data$y)
-pcoa34_fit <- edgeR::voomLmFit(bulk$dge, design = pcoa34_design)
-pcoa34_fit <- limma::eBayes(pcoa34_fit)
-bulk$tables$pcoa3_degs <- limma::topTable(pcoa34_fit, coef="xaxis", number = 10)
-bulk$tables$pcoa4_degs <- limma::topTable(pcoa34_fit, coef="yaxis", number = 10)
-
-## plot PCoAs
-bulk$plots$qc$pPCoA 
+## view DEGs associated with the PCo's (labeled as PCs for simplicity)
+bulk$plots$qc$limmaPCoA$`1v2`$PC1_DEGs
+bulk$plots$qc$limmaPCoA$`1v2`$PC2_DEGs
+bulk$plots$qc$limmaPCoA$`3v4`$PC3_DEGs
+bulk$plots$qc$limmaPCoA$`3v4`$PC4_DEGs
 ```
 
 # 4 - DESeq2
@@ -524,8 +519,8 @@ bulk$deseq$dds.data <- DESeqDataSetFromMatrix(countData = bulk$dge$counts,
                                               design = bulk$md$design)
 
 ## data transformation
-#bulk$deseq$rld <- rlog(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric") # slow
-bulk$deseq$vst <- vst(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric")
+#bulk$deseq$rld <- rlog(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric") # slow, not recommended
+bulk$deseq$vst <- vst(bulk$deseq$dds.data,blind = FALSE, fitType = "parametric")   # necessary if you want to make PCAs with mode = "deseq"
 bulk$deseq$dds.data <- estimateSizeFactors(bulk$deseq$dds.data) # Add scaling factor
 bulk$deseq$normCounts <- counts(bulk$deseq$dds.data, normalized = TRUE)
 
