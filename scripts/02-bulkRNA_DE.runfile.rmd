@@ -118,6 +118,8 @@ bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
 The contrasts you generate can be used for both DESeq2 and limma/EdgeR.
 Generally, you want to structure your contrasts as `testVar - controlVar`. I am working on a way to automate building a contrast matrix, but for now, it is manual.
 
+See 'notes/contrastExamples.R' for some complex contrast building examples
+
 ```{r define contrast}
 ## removing metadata column name from contrast matrix
 colnames(bulk$md$design) <- gsub("group", "", colnames(bulk$md$design))
@@ -130,31 +132,19 @@ contrastFunction <- function(x) {
 # Within-group-DNA Day0 effects
   DNA_D01vsD00 = DNA.Day01 - DNA.Day00,
   DNA_D02vsD00 = DNA.Day02 - DNA.Day00,
-  DNA_D04vsD00 = DNA.Day04 - DNA.Day00,
-  DNA_D07vsD00 = DNA.Day07 - DNA.Day00,
-  DNA_D14vsD00 = DNA.Day14 - DNA.Day00,
   
 # Within-group-mRNA Day0 effects
   mRNA_D01vsD00 = mRNA.Day01 - mRNA.Day00,
   mRNA_D02vsD00 = mRNA.Day02 - mRNA.Day00,
-  mRNA_D04vsD00 = mRNA.Day04 - mRNA.Day00,
-  mRNA_D07vsD00 = mRNA.Day07 - mRNA.Day00,
-  mRNA_D14vsD00 = mRNA.Day14 - mRNA.Day00,
   
 # Within-day group effects
-  DNA_D00vsmRNA_D00 = DNA.Day00 - mRNA.Day00,
   DNA_D01vsmRNA_D01 = DNA.Day01 - mRNA.Day01,
   DNA_D02vsmRNA_D02 = DNA.Day02 - mRNA.Day02,
-  DNA_D04vsmRNA_D04 = DNA.Day04 - mRNA.Day04,
-  DNA_D07vsmRNA_D07 = DNA.Day07 - mRNA.Day07,
-  DNA_D14vsmRNA_D14 = DNA.Day14 - mRNA.Day14,
   
 # Change-from-baseline ignoring group
   Overall_D01vsD00 = (DNA.Day01 + mRNA.Day01)/2 - (DNA.Day00 + mRNA.Day00)/2,
   Overall_D02vsD00 = (DNA.Day02 + mRNA.Day02)/2 - (DNA.Day00 + mRNA.Day00)/2,
-  Overall_D04vsD00 = (DNA.Day04 + mRNA.Day04)/2 - (DNA.Day00 + mRNA.Day00)/2,
-  Overall_D07vsD00 = (DNA.Day07 + mRNA.Day07)/2 - (DNA.Day00 + mRNA.Day00)/2,
-  Overall_D14vsD00 = (DNA.Day14 + mRNA.Day14)/2 - (DNA.Day00 + mRNA.Day00)/2,
+
   levels = bulk$md$design)
 }
 
