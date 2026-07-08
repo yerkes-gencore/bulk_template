@@ -1,10 +1,19 @@
-ggplotMDSv2 <- function(dge, sampleTable = dge$samples,
-                        mode = "limma", deseqData = NULL,
-                        sampleID = "sampleID", gene.selection = "common", 
-                        dims = c(1,2), nDEGs = 20,
-                        color = NULL, shape = NULL, size = 4,
-                        ellipse = NULL, path = NULL,
-                        show.labels = TRUE, label.size = 4, custom.labels = NULL, 
+ggplotMDSv2 <- function(dge, 
+                        sampleTable = dge$samples,
+                        mode = "limma",                   # "limma" or "deseq"
+                        deseqData = assay(dge$deseq$vst), # only necessary if in mode deseq
+                        sampleID = "sampleID", 
+                        gene.selection = "common",        # "common" or "pairwise"
+                        dims = c(1,2), 
+                        nDEGs = 20,
+                        color = NULL, 
+                        shape = NULL, 
+                        size = 4,
+                        ellipse = NULL, 
+                        path = NULL,
+                        show.labels = TRUE, 
+                        label.size = 4, 
+                        custom.labels = NULL, 
                         alpha = 1,...) {
   # mode = "limma" or "deseq"
   ## just changes where data comes from 
