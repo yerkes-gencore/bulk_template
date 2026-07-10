@@ -479,6 +479,55 @@ bulk$plots$qc$limmaPCA$`3v4`$PC3_DEGs
 bulk$plots$qc$limmaPCA$`3v4`$PC4_DEGs
 ```
 
+### 3.1.1 - Generate separate PCAs by a particular group 
+If you want to view PCAs of samples in particular groups because of overly busy plots or strong group effects (such as sex), this chunk will generate and display sub-PCAs. 
+
+I find saving these plots takes up a large amount of space, so I set it up to display the genes associated with the relevant PCs. I recommend running it this way first, and saving objects you are interested in keeping. 
+
+```{r PCA, fig.width=10, fig.height=11, warning = FALSE}
+# view plots
+groupVar <- "sex"
+
+for(i in unique(bulk$dge$samples[[groupVar]])){ 
+print(patchwork::wrap_plots(lapply(
+  lapply(dims_list, function(dims) {
+    ggplotMDSv2(bulk$dge[,which(bulk$dge$samples[[groupVar]] == i)], 
+                dims = dims,
+                gene.selection = "common", 
+                show.labels = FALSE,
+                sampleID = "sampleID", 
+                color = "vaccineTime", 
+                shape = "grp", 
+                alpha = 1,
+                size = 3)
+    }), function(x){
+# this section preps table for genes per PC
+      dfPCs <- as.data.frame(cbind(
+        {x[[grep("DEG",names(x))[1]]] %>%
+            rownames_to_column("gene") %>%
+            mutate(direction = ifelse(logFC < 0, " (-)"," (+)"),
+                   geneDir = paste0(gene, direction)) %>% pull(geneDir)},
+        {x[[grep("DEG",names(x))[2]]] %>%
+            rownames_to_column("gene") %>%
+            mutate(direction = ifelse(logFC < 0, " (-)"," (+)"),
+                   geneDir = paste0(gene, direction)) %>% pull(geneDir)}
+        )) %>% 
+        setNames(c(grep("DEG",names(x), value = TRUE)[1], 
+                   grep("DEG",names(x), value = TRUE)[2]))
+# PCA ordination
+      (x$ord + viridis::scale_color_viridis(option = 'turbo', discrete=TRUE)) +
+# table with envfit variables and p-val
+        ggtexttable(x$envfit, rows = NULL, theme = ttheme(
+          base_size = 10, padding = unit(c(1,2),'mm'))) +
+# table with genes per PC 
+        ggtexttable(dfPCs, rows = NULL,theme = ttheme(
+          base_size = 7, padding = unit(c(1,2),'mm')))
+      }),
+  ncol = 1, heights = c(1,1,1), guides = "collect") & 
+    ggtitle(i))
+}
+```
+
 ## 3.2 - PCoA
 
 ```{r PCoA, fig.width=8, fig.height=12}
