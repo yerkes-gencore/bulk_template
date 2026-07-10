@@ -442,7 +442,7 @@ If `x_genes` are chosen from pairwise comparisons of all samples, then a PCoA pl
 
 ## 3.1 - PCA
 
-```{r PCA, fig.width=8, fig.height=8}
+```{r PCA, fig.width=8, fig.height=12}
 ## we will be pulling out the first 4 Principal Components (PCs)
 dims_list <- list("1v2"=c(1,2), "2v3"=c(2,3), "3v4"=c(3,4))
 
@@ -457,19 +457,19 @@ bulk$plots$qc$limmaPCA <- lapply(dims_list, function(dims) {
               color = "group", 
               shape = "sex",             # limited to ~ 6 shapes
               alpha = 1,
-              ellipse = NULL,            # 
-              path = NULL                # usually "subjectID" for longitudinal data
-              )})
+              ellipse = NULL,            
+              path = NULL,               # usually "subjectID" for longitudinal data
+              size = 3)})
 
 ## plot PCAs
-lapply(bulk$plots$qc$limmaPCA, function(x){
+patchwork::wrap_plots(lapply(bulk$plots$qc$limmaPCA, function(x){
 # default ggplot2 color scheme
-  # x$ord + (ggtexttable(x$envfit, rows = NULL))
+  #x$ord + (ggtexttable(x$envfit, rows = NULL, theme = ttheme(base_size = 10, padding = unit(c(1,2),'mm'))))
 # better color scheme
   (x$ord + 
       viridis::scale_color_viridis(option = 'turbo', discrete=TRUE)) + 
-    (ggtexttable(x$envfit, rows = NULL))
-})
+    (ggtexttable(x$envfit, rows = NULL, theme = ttheme(base_size = 10, padding = unit(c(1,2),'mm'))))
+}), ncol = 1, heights = c(1,1,1), guides = "collect")
 
 ## view DEGs associated with the PCs
 bulk$plots$qc$limmaPCA$`1v2`$PC1_DEGs
@@ -480,7 +480,7 @@ bulk$plots$qc$limmaPCA$`3v4`$PC4_DEGs
 
 ## 3.2 - PCoA
 
-```{r PCoA, fig.width=8, fig.height=8}
+```{r PCoA, fig.width=8, fig.height=12}
 bulk$plots$qc$limmaPCoA <- lapply(dims_list, function(dims) {
   ggplotMDSv2(bulk$dge, 
               mode = "limma",              # "limma" or "deseq", if "deseq" requires VST data
@@ -492,19 +492,19 @@ bulk$plots$qc$limmaPCoA <- lapply(dims_list, function(dims) {
               color = "group", 
               shape = "sex",               # limited to ~ 6 shapes
               alpha = 1,
-              ellipse = NULL,              # 
-              path = NULL                  # usually "subjectID" for longitudinal data
-              )})
+              ellipse = NULL,               
+              path = NULL,                 # usually "subjectID" for longitudinal data
+              size = 3)})
 
 ## plot PCoAs
-lapply(bulk$plots$qc$limmaPCoA, function(x){
+patchwork::wrap_plots(lapply(bulk$plots$qc$limmaPCoA, function(x){
 # default ggplot2 color scheme
-  # x$ord + (ggtexttable(x$envfit, rows = NULL))
+  #x$ord + (ggtexttable(x$envfit, rows = NULL, theme = ttheme(base_size = 10, padding = unit(c(1,2),'mm'))))
 # better color scheme
   (x$ord + 
       viridis::scale_color_viridis(option = 'turbo', discrete=TRUE)) + 
-    (ggtexttable(x$envfit, rows = NULL))
-})
+    (ggtexttable(x$envfit, rows = NULL, theme = ttheme(base_size = 10, padding = unit(c(1,2),'mm'))))
+}), ncol = 1, heights = c(1,1,1), guides = "collect")
 
 ## view DEGs associated with the PCo's (labeled as PCs for simplicity)
 bulk$plots$qc$limmaPCoA$`1v2`$PC1_DEGs
