@@ -450,14 +450,19 @@ If `x_genes` are chosen from pairwise comparisons of all samples, then a PCoA pl
 dims_list <- list("1v2"=c(1,2), "2v3"=c(2,3), "3v4"=c(3,4))
 
 bulk$plots$qc$limmaPCA <- lapply(dims_list, function(dims) {
-  ggplotMDSv2(bulk$dge, dims = dims,
-            gene.selection = "common", 
-            nDEGs = 20,
-            show.labels = FALSE,
-            sampleID = "sampleID", 
-            color = "group", 
-            shape = "sex", 
-            alpha = 1)})
+  ggplotMDSv2(bulk$dge, 
+              mode = "limma",            # "limma" or "deseq", if "deseq" requires VST data
+              dims = dims,
+              gene.selection = "common", # "common" or "pairwise"
+              nDEGs = 20,                # number of DEGs per PC
+              show.labels = FALSE,       # show sample labels?
+              sampleID = "sampleID", 
+              color = "group", 
+              shape = "sex",             # limited to ~ 6 shapes
+              alpha = 1,
+              ellipse = NULL,            # 
+              path = NULL                # usually "subjectID" for longitudinal data
+              )})
 
 ## plot PCAs
 lapply(bulk$plots$qc$limmaPCA, function(x){
@@ -480,16 +485,21 @@ bulk$plots$qc$limmaPCA$`3v4`$PC4_DEGs
 
 ```{r PCoA, fig.width=8, fig.height=8}
 bulk$plots$qc$limmaPCoA <- lapply(dims_list, function(dims) {
-  ggplotMDSv2(bulk$dge, dims = dims,
-            gene.selection = "pairwise", 
-            nDEGs = 20,
-            show.labels = FALSE,
-            sampleID = "sampleID", 
-            color = "group", 
-            shape = "sex", 
-            alpha = 1)})
+  ggplotMDSv2(bulk$dge, 
+              mode = "limma",              # "limma" or "deseq", if "deseq" requires VST data
+              dims = dims,
+              gene.selection = "pairwise", # "common" or "pairwise"
+              nDEGs = 20,                  # number of DEGs per PC
+              show.labels = FALSE,         # show sample labels?
+              sampleID = "sampleID", 
+              color = "group", 
+              shape = "sex",               # limited to ~ 6 shapes
+              alpha = 1,
+              ellipse = NULL,              # 
+              path = NULL                  # usually "subjectID" for longitudinal data
+              )})
 
-## plot PCAs
+## plot PCoAs
 lapply(bulk$plots$qc$limmaPCoA, function(x){
 # default ggplot2 color scheme
   # x$ord + (ggtexttable(x$envfit, rows = NULL))
