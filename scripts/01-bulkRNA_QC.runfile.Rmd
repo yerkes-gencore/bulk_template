@@ -117,7 +117,8 @@ bulk$config$libType <- 'unstranded'
 ```
 
 ## 0.2 - Experimental config
-These are variables that may be called to streamline runfile automation and ideally, require no changes to the template file prior to knitting. I am still working on integrating this info and testing if it is generalizable enough for diverse experimental conditions.
+These are variables that may be called to streamline runfile automation and ideally, require no changes to the template file prior to knitting. 
+I am still working on integrating this info and testing if it is generalizable enough for diverse experimental conditions.
 
 ```{r config, eval=FALSE}
 ################################################################################
@@ -144,7 +145,7 @@ bulk$config$timeVar <- c(
 ```
 
 ## 0.3 - Sample metadata
-Personally, I prefer to modify a csv file in Excel to contain the desired columns with proper formatting rather than parsing through the manifest file provided by the investigator.
+Personally, I make a csv file in Excel to contain properly formatted columns rather than parsing through the manifest file provided by the investigator.
 
 You must have columns `fileID`, `sampleID`, and `group` to run this template as-is.
 For longitudinal/repeated measures, you also need columns `subjectID` and `tPt`
