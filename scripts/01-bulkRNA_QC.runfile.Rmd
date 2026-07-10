@@ -81,9 +81,6 @@ https://www.bioconductor.org/packages/devel/bioc/vignettes/edgeR/inst/doc/edgeRU
 
 # Part 0 - Set-up 
 *Run set-up steps manually*
-*Edit `config/QC_config.yml` before running script*
-
-note: I don't love using the yml files
 
 ## 0.1 - Initiate `bulk` object
 This object will hold project metadata, sample metadata, counts tables, and model fits
