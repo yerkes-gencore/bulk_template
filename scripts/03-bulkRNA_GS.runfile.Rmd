@@ -45,9 +45,9 @@ library(patchwork)
 library(plotly)
 
 ## custom functions
-source(here("R/limmaEdgeR_functions.R")) 
-source(here("R/heatmap_functions.R"))
-source(here("R/QC_functions.R"))
+source(here("R/old/limmaEdgeR_functions.R")) 
+source(here("R/old/heatmap_functions.R"))
+source(here("R/old/QC_functions.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {

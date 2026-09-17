@@ -45,9 +45,9 @@ library(patchwork)
 library(plotly)
 
 ## custom functions
-source(here("R/limmaEdgeR_functions.R")) 
-source(here("R/heatmap_functions.R"))
-source(here("R/QC_functions.R"))
+source(here("R/old/limmaEdgeR_functions.R")) 
+source(here("R/old/heatmap_functions.R"))
+source(here("R/old/QC_functions.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -825,7 +825,7 @@ p5 <- ggplot() +
   theme_bw(base_size = 8) +
   labs(title = "Log baseMean") +
   xlab(NULL) +
-  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  scale_x_discrete(labels = c('grey' = "none", 'orange' = "limma\nonly","pink" = "DESeq2\nonly",'red' = "both\nmethods")) +
   ylab("Log baseMean") 
 
 # compare DESeq2 L2FC of DEGs
@@ -836,7 +836,7 @@ p6 <- ggplot() +
   theme_bw(base_size = 8) +
   labs(title = "DESeq2 L2FC") +
   xlab(NULL) +
-  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  scale_x_discrete(labels = c('grey' = "none", 'orange' = "limma\nonly","pink" = "DESeq2\nonly",'red' = "both\nmethods")) +
   ylab("DESeq2 L2FC") 
 
 # compare limma L2FC of DEGs
@@ -847,7 +847,7 @@ p7 <- ggplot() +
   theme_bw(base_size = 8) +
   labs(title = "limma L2FC") +
   xlab(NULL) +
-  scale_x_discrete(labels = c("none", "limma\nonly","DESeq2\nonly","both\nmethods")) +
+  scale_x_discrete(labels = c('grey' = "none", 'orange' = "limma\nonly","pink" = "DESeq2\nonly",'red' = "both\nmethods")) +
   ylab("limma L2FC") 
   
 bulk$plots$compareMethod1 <- ggarrange(p1,p2,p3,p4, 
@@ -857,6 +857,7 @@ bulk$plots$compareMethod2 <- ggarrange(p5,p6,p7,
                                        ncol = 3, nrow = 1,
                                        common.legend = TRUE)
 ```
+
 
 ## 4.2 - Plot comparison
 ```{r compare DESeq2 and Limma results, width = 10, height = 10, message = FALSE}
