@@ -1,0 +1,491 @@
+---
+title: "03-bulkRNA_GS.runfile"
+author: "ENPRC Genomics Core"
+date:  "`r Sys.Date()`"
+output:
+  pdf_document:
+    df_print: kable
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE,
+                      message = TRUE, 
+                      echo=FALSE, 
+                      fig.width = 8, 
+                      fig.height = 4)
+## packages
+# analysis
+library(DESeq2)
+library(limma)
+library(edgeR)
+library(msigdbr)
+library(fgsea)
+library(GSVA)
+#library(gencoreBulk)
+
+# functional
+library(tidyverse)
+library(readr)
+library(readxl)
+library(yaml)
+library(dplyr)
+library(here)
+library(tinytex) # required for PDF output
+library(rmdformats) # required for HTML output
+library(data.table)
+
+# plotting
+library(ggtext)
+library(ggforce)
+library(ggpubr)
+library(ggplotify)
+library(ggh4x)
+library(patchwork)
+library(plotly)
+
+## custom functions
+source(here("R/limmaEdgeR_functions.R")) 
+source(here("R/heatmap_functions.R"))
+source(here("R/QC_functions.R"))
+
+# I personally like to see my month name, even if it isn't ISO compliant
+getDate <- function() {
+  format(Sys.Date(), "%Y%b%d")
+}
+```
+
+# Explanation of report workflow
+
+This runfile is where we can run all the code required for the analysis, which will populate our environment with objects used in the format file. We typically run as much of the more heavier computation in the runfile as possible so that it doesn't take long to render the format file, since we may need to render iteratively as we adjust the format, fix typos, write explanatory notes, or add report sections.
+
+`03-bulkRNA_GS.runfile.Rmd` computes gene set analyses, including GSEA and GSVA. In the future, this may include other interesting plots and/or analyses such as pathway/network analyses once they are automatable
+
+# Part 0 - Set-up 
+*Run set-up steps manually*
+
+## 0.1 - Starting with object made in script 02-bulkRNA_DE.runfile.Rmd
+```{r load data, eval = FALSE}
+bulk <- read_rds(here("rds/report-02/bulk-2026Apr16.rds"))
+```
+
+## 0.2 - Decide whether you will use DESeq2 or limma/EdgeR results
+```{r choose method, eval = FALSE}
+# limma 
+# bulk$gsea$resTab <- bulk$degTab$limma
+#bulk$gsva$exprTab <- bulk$dge$lcpm
+
+# DESeq2
+bulk$gsea$resTab <- bulk$degTab$deseq
+bulk$gsva$exprTab <- log(bulk$deseq$normCounts +1, base = 2)
+```
+
+## 0.3 - Prep gene set lists
+```{r}
+geneSets <- list()
+
+geneSets[["H"]] <- msigdbr(species = "Homo sapiens", collection = "H") %>%
+  dplyr::select(gene_symbol, gs_name) %>% unstack()
+
+geneSets[["GOBP"]] <- msigdbr(species = "Homo sapiens", subcollection = "C5", subcategory = "GO:BP") %>%
+  dplyr::select(gene_symbol, gs_name) %>% unstack()
+
+geneSets[["CP"]] <- c(
+  msigdbr(species = "Homo sapiens", subcollection = "C2", subcategory = "CP:BIOCARTA") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", subcollection = "C2", subcategory = "CP:KEGG_LEGACY") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", subcollection = "C2", subcategory = "CP:PID") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", subcollection = "C2", subcategory = "CP:REACTOME") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack(),
+  msigdbr(species = "Homo sapiens", subcollection = "C2", subcategory = "CP:WIKIPATHWAYS") %>%
+    dplyr::select(gene_symbol, gs_name) %>% unstack()
+)
+
+# deduplicate genes
+geneSets <- lapply(geneSets, FUN = function(x){
+  lapply(x, function(x){
+    gs <- x[!duplicated(x)]
+  })
+})
+
+```
+
+# 1 - GSEA
+
+## 1.1 - Pre-rank DE stats
+
+```{r}
+bulk$gsea$stats <- bulk$gsea$resTab %>%
+  filter(!is.na(pvalue)) %>%
+  mutate(rank_stat = log2FoldChange * -log10(pvalue + .Machine$double.xmin)) %>% 
+  split(.$contrast) %>%
+    lapply(., function(y) {
+      y %>% select(gene, rank_stat) %>%
+        deframe() %>%
+        sort()
+    })
+```
+
+## 1.2 - Run GSEA
+```{r, message=FALSE, warning=FALSE}
+for(i in c("H","GOBP","CP")){
+  res <- bulk$gsea$stats %>%
+    lapply(., function(stats_vec) {
+      fgsea(pathways = geneSets[[i]], stats = stats_vec,
+            minSize = 15) %>% 
+        arrange(pval)
+  })
+  bulk$gsea$results[[i]] <- lapply(res, function(contrast) {
+    contrast %>%
+      as_tibble() %>%
+      rowwise() %>%
+      dplyr::mutate(leading_edge = paste(leadingEdge, collapse = ", ")) %>%
+      ungroup() %>%
+      dplyr::mutate(n_leading_edge = str_count(leading_edge, pattern = ",") + 1,
+                 #   leadingEdge = NULL,
+                    database = i)
+    })
+}
+```
+
+## 1.2 - subset significant pathways
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=10}
+# get top 30 pathways per contrast per database
+for(i in c("H","GOBP","CP")){
+  bulk$gsea$sigResults[[i]] <- lapply(bulk$gsea$results[[i]], function(x){
+    df <- x %>%
+      as_tibble() %>%
+      filter(pval < 0.1) %>%
+      dplyr::mutate(term = str_replace_all(string = pathway, 
+                                           pattern = "_", 
+                                           replacement = " "),
+                    propLEG = n_leading_edge/size) %>%
+      arrange(rev(propLEG),padj) %>%
+      slice_max(propLEG,n = 30, with_ties = FALSE) 
+  })
+}
+
+```
+
+## 1.3 - make plots
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=10}
+# make plots
+for(j in c("H","GOBP","CP")){
+  for(i in unique(bulk$gsea$resTab$contrast)){
+    bulk$plots$gsea[[j]][[i]] <- bulk$gsea$sigResults[[j]][[i]] %>%
+      ggplot(aes(x = NES, y = fct_reorder(term, NES), 
+              #   size = propLEG,          # proportion of leading-edge genes per set
+                 size = n_leading_edge,  # absolute number of leading-edge genes
+                 color = pval)) +
+      geom_point() + ggtitle(paste(i,j,sep = "_")) +
+      scale_color_gradient(low = "red", high = "blue") +
+      theme_bw(base_size = 8) +
+      #scale_size_continuous(limits = c(0,1), name = "leading edge\n--------\ntotal genes") +
+      scale_y_discrete(labels = scales::label_wrap(40), limits = rev) +
+      ylab(NULL) +  
+      theme(plot.title = element_text(face = "bold"),
+            aspect.ratio = 1) +
+      xlim(min(bind_rows(bulk$gsea$sigResults[[j]])$NES),
+           max(bind_rows(bulk$gsea$sigResults[[j]])$NES)) +
+      force_panelsizes(cols = unit(8, "cm"))
+  }}
+
+```
+
+## 1.2&3 - pull out sig pathways and make plots at once
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=10}
+bulk$plots$gsea <- lapply(bulk$gsea$results, function(x){
+df <- bind_rows(lapply(x, function(y){
+    df <- y %>%
+      as_tibble() %>%
+      filter(pval < 0.1) %>%
+      dplyr::mutate(term = str_replace_all(string = pathway, 
+                                           pattern = "_", 
+                                           replacement = " "),
+                    propLEG = n_leading_edge/size) %>%
+      arrange(rev(propLEG),padj) %>%
+      slice_max(propLEG,n = 30, with_ties = FALSE) 
+  }), .id = "contrast")
+plots <- list()
+  for(i in unique(bulk$gsea$resTab$contrast)){
+ plots[[i]] <- df %>%
+    filter(contrast %in% i) %>%
+    ggplot(aes(x = NES, y = fct_reorder(term, NES), 
+              #   size = propLEG,          # proportion of leading-edge genes per set
+                 size = n_leading_edge,  # absolute number of leading-edge genes
+                 color = pval)) +
+      geom_point() + ggtitle(paste(i,j,sep = "_")) +
+      scale_color_gradient(low = "red", high = "blue") +
+      theme_bw(base_size = 8) +
+      #scale_size_continuous(limits = c(0,1), name = "leading edge\n--------\ntotal genes") +
+      scale_y_discrete(labels = scales::label_wrap(40), limits = rev) +
+      ylab(NULL) +  
+      theme(plot.title = element_text(face = "bold"),
+            aspect.ratio = 1) +
+      xlim(min(df$NES),
+           max(df$NES)) +
+      force_panelsizes(cols = unit(8, "cm"))
+}
+return(plots)
+})
+
+```
+
+### 1.3.1 - view hallmark GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4}
+bulk$plots$gsea$H
+```
+
+### 1.3.2 - view gene ontology GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea$GOBP
+```
+
+### 1.3.3 - view canonical GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea$CP
+```
+
+# 2 - GSVA
+
+## 2.1 - Run GSVA 
+```{r}
+for(i in c("H","GOBP","CP")){
+bulk$gsva$param[[i]] <- gsvaParam(bulk$gsva$exprTab, geneSets[[i]], minSize = 15)
+bulk$gsva$results[[i]] <- gsva(bulk$gsva$param[[i]])
+}
+```
+
+## 2.2 - Make GSVA heatmaps of variable gene sets
+```{r}
+bulk$plots$gsva$varPaths <- list()
+
+for(i in c("H","GOBP","CP")){
+# pull out variable pathways and order
+  df <- as.data.frame(bulk$gsva$results[[i]]) %>%
+    mutate(var=rowVars(as.matrix(select(., everything())), na.rm = TRUE)) %>%
+    arrange(desc(var)) %>%
+    slice_head(n=30) %>% select(!var)
+  ord <- hclust(dist(df))$order
+  
+# long dataframe for ggplot2
+  bulk$plots$gsva$varPaths[[i]] <- df %>%
+    rownames_to_column("pathway") %>%
+    pivot_longer(!pathway,
+                 names_to = "sampleID",
+                 values_to = "Enrichment") %>%
+    inner_join(.,bulk$dge$samples[,c('sampleID',"subjectID","group")],
+               by="sampleID") %>%
+    dplyr::group_by(pathway) %>% 
+    dplyr::mutate(zscore = scale(Enrichment)[,1]) %>% 
+    ungroup() %>% 
+    dplyr::arrange(group,subjectID) %>%    # so samples are organized by these variables
+    dplyr::mutate(
+      group = factor(group, levels = unique(group)),
+      subjectID = factor(subjectID, levels = unique(subjectID)),
+      pathway = factor(pathway, levels = unique(pathway)[ord]),
+      term = str_replace_all(string = pathway, 
+                             pattern = "_", 
+                             replacement = " "),
+      term = str_split_fixed(term, " ", n=2)[,2],
+      term = factor(term, levels = unique(term)[ord]),
+      group = gsub(".", " ",group, fixed = TRUE)
+      ) %>%
+    ggplot(., aes(x = subjectID, 
+                 # fill = Enrichment, 
+                  fill = zscore,
+                  y = term)) +
+    geom_tile(show.legend = TRUE) +
+    scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato") +
+    facet_grid(~ group, 
+               scales='free_x', space="fixed",
+               labeller = label_wrap_gen(width = 4)) +
+    labs(title = paste0(i," Pathway Enrichment"),
+         x = "Sample", 
+         y = "Pathway") +
+    scale_y_discrete(labels = scales::label_wrap(50), limits = rev) +
+    theme_bw(base_size = 8) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1,color = "black"),
+          axis.text.y = element_text(color = "black"),
+          legend.position = "bottom")
+}
+```
+
+### 2.2.1 - view hallmark GS
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+bulk$plots$gsva$varPaths$H
+```
+
+### 2.2.2 - view gene ontology GS
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+bulk$plots$gsva$varPaths$GOBP
+```
+
+### 2.2.3 - view canonical GS
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+bulk$plots$gsva$varPaths$CP
+```
+
+## 2.3 - Make GSVA heatmaps based on GSEA pathways
+```{r}
+# pull out GSEA pathways that were visualized in dot plots per contrast
+
+for(j in colnames(bulk$md$contr.matrix)){
+  cmSubset <-bulk$md$contr.matrix %>%
+    as.data.frame() %>%
+    rownames_to_column("group") %>%
+    dplyr::select("group","comparison" = all_of(j))
+ 
+  for(i in c("H","GOBP","CP")){
+    df <- as.data.frame(bulk$gsva$results[[i]]) %>%
+      rownames_to_column("pathway") %>%
+      filter(pathway %in% bulk$gsea$sigResults[[i]][[j]]$pathway)
+      
+     
+    ord <- hclust(dist(select(df,!pathway)))$order
+      
+    bulk$plots$gsva$contrasts[[i]][[j]] <- df %>%
+      pivot_longer(!pathway,
+                   names_to = "sampleID",
+                   values_to = "Enrichment") %>%
+    inner_join(.,bulk$dge$samples[,c('sampleID',"subjectID","group")],
+               by="sampleID") %>%
+    dplyr::inner_join(.,cmSubset, by = "group") %>%
+    dplyr::group_by(pathway) %>% 
+    dplyr::mutate(zscore = scale(Enrichment)[,1]) %>% 
+    ungroup() %>% 
+    dplyr::arrange(group,subjectID) %>%    # so samples are organized by these variables
+    dplyr::mutate(
+      group = factor(group, levels = unique(group)),
+      subjectID = factor(subjectID, levels = unique(subjectID)),
+      pathway = factor(pathway, levels = unique(pathway)[ord]),
+      term = str_replace_all(string = pathway, 
+                             pattern = "_", 
+                             replacement = " "),
+      term = str_split_fixed(term, " ", n=2)[,2],
+      term = factor(term, levels = unique(term)[ord]),
+      group = gsub(".", " ",group, fixed = TRUE)) %>%
+      {
+      ggplot(., aes(x = subjectID, y = term, fill = Enrichment)) +
+      geom_tile(show.legend = TRUE) +
+      scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato") +
+      facet_grid(~ group, 
+                 scales='free_x', space="fixed",
+                 labeller = label_wrap_gen(width = 4)) +
+      labs(title = paste0(i," Pathway Enrichment"),
+           subtitle = paste0("Contrast: ", j),
+           x = "Sample", 
+           y = "Pathway") +
+      scale_y_discrete(labels = scales::label_wrap(50), limits = rev) +
+      theme_bw(base_size = 8) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      geom_rect(data = subset(., comparison %in% c(1,-1)), 
+                linewidth = 2, fill = NA, colour = "black", 
+                xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) 
+      }
+      
+}}
+```
+
+### 2.3.1 - view hallmark GS by contrasts
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=4}
+bulk$plots$gsva$contrasts$H
+```
+
+### 2.3.2 - view gene ontology GS by contrasts
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+bulk$plots$gsva$contrasts$GOBP
+```
+
+### 2.3.3 - view canonical GS by contrasts
+```{r, message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+bulk$plots$gsva$contrasts$CP
+```
+
+# 3 - Export objects
+
+## 3.1 - Prep for export
+```{r prep for export}
+## increase report count by 1
+bulk$config$reportNumber <- sprintf("%02d", as.numeric(bulk$config$reportNumber) + 1)  
+
+## make subdirectories for `outputs` and `rds`
+subdir <- paste0("report-", bulk$config$reportNumber)
+
+if (!dir.exists(here("outputs/", subdir))) {
+  dir.create(here("outputs/", subdir))}
+
+if (!dir.exists(here("rds/", subdir))) {
+  dir.create(here("rds/", subdir))}
+```
+
+## 3.2 - Write `bulk` rds
+```{r}
+bulk %>%
+  write_rds(., here("rds", subdir, paste0("bulk-", getDate(), ".rds")))
+```
+
+## 3.3 - Export GSEA results
+```{r export, warning=FALSE}
+resTab_filename_GSEA <- paste0(
+  bulk$config$project, "-",
+  bulk$config$reportNumber, "-",
+  "GSEA_results-", getDate(), ".xlsx")
+
+writexl::write_xlsx(lapply(bulk$gsea$results, function(x){bind_rows(x, .id = "contrast")}), here("outputs", subdir, resTab_filename_GSEA))
+```
+
+## 3.3 - Export GSVA results
+```{r}
+
+write.xlsx(list(
+  "Hallmark" = rownames_to_column(as.data.frame(bulk$gsva$msigH.gsva),"pathway"),
+  "Canonical" = rownames_to_column(as.data.frame(bulk$gsva$msigCP.gsva),"pathway"),
+  "BiologicalProcess" = rownames_to_column(as.data.frame(bulk$gsva$msigGOBP.gsva),"pathway")),
+  here("outputs", subdir, "GSVAresults.xlsx"))
+```
+
+
+### 1.4 - Export results table with all contrasts in a wide format as excel file
+```{r}
+test <- bulk$gsea$results %>%
+  lapply(., function(x) {
+    bind_rows(x, .id = "contrast")
+    }) %>%
+  bind_rows(.id = "database")
+
+
+
+names(gsea_results_fmt) <- names(bulk$gsea$results)
+# Reorder contrast in order of levels to keep consistent order in reports
+gsea_results_fmt <- gsea_results_fmt %>% 
+  lapply(., function(results_db) {
+    results_db <- results_db[levels(bulk$gsea$resTab$contrast)] 
+})
+
+# ## One sheet per database, each contrast side-by-side
+# gseaResults_compact <- lapply(names(gsea_results), function(db) {
+#     lapply(names(gsea_results[[db]]), function(contrast) {
+#       gsea_results_fmt[[db]][[contrast]] %>%
+#         dplyr::select(pathway, NES, pBH = padj) %>%
+#         dplyr::rename_with(~ paste0(contrast, "_", .x, recycle0 = TRUE), all_of(c("NES", "pBH")))
+#           }) %>%
+#     purrr::reduce(full_join, by = "pathway")
+# })
+# names(gseaResults_compact) <- names(gsea_results_fmt)
+
+GSEA_filename <- paste0(
+  bulk$qc_config$projectName, "-", 
+  bulk$qc_config$reportNumber, "-",
+  "GSEA_results_tables", "-",
+  getDate(), ".xlsx"
+  )
+
+gsea_results_fmt %>%
+  lapply(., function(x) bind_rows(x, .id = "contrast")) %>%
+  writexl::write_xlsx(.,here::here("outputs/", subdir, GSEA_filename))
+```
+
+

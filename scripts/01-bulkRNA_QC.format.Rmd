@@ -1,0 +1,169 @@
+---
+title: "`r bulk$config$project`: Report `r bulk$qc_config$reportNumber` - QC"
+author: |
+  | `r bulk$config$author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    df_print: kable
+    latex_engine: lualatex
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+```
+
+```{=html}
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+details > summary {
+  display: list-item;
+}
+</style>
+```
+
+The report is organized into three parts:
+
+1. Quality Control (data input, filtering by expression, PCA plotting and exporting counts table)
+2. Differential Expression (defining design formula and contrasts, running diagnostics and generating DEG plots and summaries) and 
+3. Gene Set Enrichment Analysis (against various different gene set lists).
+
+Please note that this `.html` file is best viewed when downloaded to your local machine and viewed in your internet browser (i.e. not on OneDrive). There is a table of contents on the left-hand side and some sections in the report include clickable tabs to organize the results. These will not show up if viewed on OneDrive.
+
+# Part 1 - QC
+
+In Part 1 of this report, we walk through the results of running a quality control analysis on the provided data.
+
+## 1 - Study design overview
+
+```{r meta table, message=FALSE, warning=FALSE}
+bulk$tables$sampleSummary %>%
+  knitr::kable(caption = "Study Design", format = "simple")
+```
+
+\newpage
+
+## 2 - Mapping stats
+This graph shows the portion of reads in each sample that mapped to the reference genome. Only reads that map to a single gene ("identified") are retained for analysis.
+
+```{r mapping_plot, fig.width=16, fig.height=6}
+ggarrange(bulk$plots$qc$pMapBins, legend = "bottom")
+```
+
+## 3 - Gene filtering by expression
+Here, we identify and remove genes that have low or zero expression across samples in the data set, reducing the risk of reaching erroneous correlations. We retain genes that have sufficiently high expression in all (green) or some (yellow) samples, and remove genes that are absent from all (red) or are sparsely expressed by most (orange) samples.
+
+```{r gene filt, fig.height = 6, fig.width = 16}
+bulk$plots$qc$pGeneFilt
+```
+
+\newpage
+
+## 4 - Library sizes of discarded and kept data {.tabset}
+
+### Library size (sum of counts)
+This graph displays the total number of reads per sample that successfully mapped to the reference genome, colored by whether they mapped to genes that were retained (blue) or removed (red). Overall, this figure confirms that removing low-expression genes has little impact on overall library yields. 
+
+```{r library size, fig.height=6, fig.width=16, message=FALSE}
+bulk$plots$qc$pLibSize
+```
+
+### log10(Library size)
+This figure shows the same data from above with a log transformation.
+
+```{r log library, fig.height=6, fig.width=16, message=FALSE}
+bulk$plots$qc$pLogLibSize
+```
+
+\newpage
+
+## 5 - Globin contamination {.tabset}
+This is included in case globin-related genes are an important contamination factor for this study
+
+### Bar plot
+```{r globin bar, fig.height=6, fig.width=12}
+bulk$plots$qc$pGlobinBars
+```
+
+### Violin plot
+```{r globin violin, fig.height=6, fig.width=12}
+bulk$plots$qc$pGlobinVln
+```
+
+\newpage
+
+## 5 - PCA
+
+Principal Component Analysis (PCA) allows us to condense gene expression profiles into a two-dimensional space to represent how samples relate to each other. Only a limited number of highly variable genes are used in this PCA, since our main goal here is to build a general impression of the data composition. PCA is visualized via ordination with the most important Principal Components (PCs) used as the x- and y-axes. PC1 always explains the largest amount of variation followed by PC2, PC3, PC4, etc; their impact is quantified in the percentage written in their respective axis labels. While two samples may seem very far apart spatially in a PCA, it is important to check the percent of variation that is being represented by an axis when interpreting PCA plots!
+
+### PCA Plots
+Here, we display the first four PCs in three ordination plots, which display most of the variation found in this data set.
+
+```{r pca plots, fig.height=6, fig.width=12}
+lapply(names(bulk$plots$qc$pPCA), function(x) bulk$plots$qc$pPCA[[x]] + ggtitle(x)) %>%
+  ggpubr::ggarrange(plotlist=., ncol=3, common.legend = T, legend = "bottom")
+```
+
+\newpage
+
+### Genes associated with PCs {.tabset}
+While "PC" is an undefined factor, we can investigate characteristics of the data that contribute to a PC. These are the top 10 genes associated with the four PCs displayed above.
+
+#### PC1
+```{r PC1 genes}
+bulk$tables$pc1_degs %>%
+  knitr::kable(format = "simple", caption = "Genes driving Principal Component 1")
+```
+
+#### PC2
+```{r PC2 genes}
+bulk$tables$pc2_degs %>%
+  knitr::kable(format = "simple", caption = "Genes driving Principal Component 2")
+```
+
+#### PC3
+```{r PC3 genes}
+bulk$tables$pc3_degs %>%
+  knitr::kable(format = "simple", caption = "Genes driving Principal Component 3")
+```
+
+#### PC4
+```{r PC4 genes}
+bulk$tables$pc4_degs %>%
+  knitr::kable(format = "simple", caption = "Genes driving Principal Component 4")
+```
+
+\newpage
+
+## 6 - Normalization comparison {.tabset}
+
+DESeq2 and limma/EdgeR were both used to normalize the data, and the relative log expression of both methods are displayed here.
+
+### Pre-normalization
+```{r raw RLE plot, fig.height=6, fig.width=12, warning=FALSE,message=FALSE}
+bulk$plots$qc$pLimmaRLE$RLE_raw
+```
+
+### limma/EdgeR
+```{r limma plot, fig.height=6, fig.width=12, warning=FALSE,message=FALSE}
+bulk$plots$qc$pLimmaRLE$RLE_norm
+```
+
+### DESeq2
+```{r deseq2 plot, fig.height=6, fig.width=12, warning=FALSE,message=FALSE}
+bulk$plots$qc$pDESeqRLE$RLE_norm
+```
+
