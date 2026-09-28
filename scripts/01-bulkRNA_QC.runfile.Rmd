@@ -17,12 +17,12 @@ knitr::opts_chunk$set(warning = TRUE,
 
 ## packages
 # analysis
-library(DESeq2) # note: in r 4.3.1, if other packages are loading in environment I get error: 'Package ‘GenomeInfoDb’ version 1.38.1 cannot be unloaded'
+library(DESeq2)
 library(limma)
 library(edgeR)
 library(msigdbr)
 library(fgsea)
-library(gencoreBulk)
+#library(gencoreBulk)
 library(vegan)
 
 # functional
@@ -61,6 +61,9 @@ source(here("R/ggplotMDSv2.R"))
 source(here("R/checkRLEv2.R"))
 source(here("R/createResTable.R"))
 source(here("R/getTopDegTbl.R"))
+source(here("R/mappingBinsPlot.R"))
+source(here("R/parseReadPerGeneFiles.R"))
+source(here("R/plotGlobin.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -112,7 +115,7 @@ bulk$config$refDir <- '/yerkes-cifs/runs/Genome_references/macaca_mulatta/t2t/st
 ## Directory with project output from STAR
 bulk$config$alignDir <- '/yerkes-cifs/runs/Analysis/2025_Analyses/c25001_AMARR51PAX/c25001_AMARR51PAX_Processing/S2.7.9a_T2T-ncbi/'
 
-## Is the library 'unstranded' or 'stranded'
+## Is the library 'unstranded', 'sense', or 'antisense'
 bulk$config$libType <- 'unstranded'
 ```
 
@@ -157,16 +160,21 @@ Example:
 |c25001-s001_...| REu20-Day-0 | mRNA  | REu20      | Day00 | mRNA.Day00 |rhesus/male/etc|
 
 ```{r import metadata, eval=FALSE}
-meta <- read.csv(here("notes/metadata.csv"))
+bulk$md$sampleTable <- read.csv(here("notes/metadata.csv"))
 
 if(bulk$config$longitudinal==TRUE){
 # generate grp.tPt
-  meta$grp.tPt <- paste(meta$grp, meta$tPt, sep = ".")
+  bulk$md$sampleTable$grp.tPt <- paste(bulk$md$sampleTable$grp, bulk$md$sampleTable$tPt, sep = ".")
 }
 
-# add meta to bulk object  
-bulk$md$sampleTable <- meta
-```
+## Summarize sample data for report
+### I am not sure what the best way to generalize this is. As long as the table is stored in bulk$tables$sampleSummary, it will populate the format file.
+bulk$tables$sampleSummary <- bulk$md$sampleTable %>%
+    dplyr::group_by(group) %>%
+    dplyr::summarize(subjectIDs = paste0(subjectID, collapse = ", "),
+                     n_subjects = n()) %>%
+    as.data.frame()
+``` 
 
 # Part 1 - Import data
 
@@ -180,6 +188,7 @@ bulk$md$sampleTable$readPath <-
        paste0(bulk$md$sampleTable$fileID, "_ReadsPerGene.out.tab"))
 
 ## Parse the read files and save mapping stats
+### Uses gencoreBulk
 counts_tmp <- parseReadPerGeneFiles(
   file.paths = setNames(bulk$md$sampleTable$readPath, 
                         nm = bulk$md$sampleTable$sampleID), 
@@ -198,14 +207,6 @@ if(bulk$config$longitudinal==TRUE){
                       group = bulk$md$sampleTable$grp)
 }
 
-## Summarize sample data for report
-bulk$tables$sampleSummary <- bulk$dge$samples %>%
-    select(fileID, sampleID, subjectID, group) %>%
-    dplyr::group_by(group) %>%
-    dplyr::summarize(subjectIDs = paste0(subjectID, collapse = ", "),
-                     n_subjects = n()) %>%
-    as.data.frame()
-
 rm(counts_tmp)
 
 ## Compute and normalize library sizes 
@@ -213,10 +214,14 @@ bulk$dge$samples$lib.size <- colSums(bulk$dge$counts)
 bulk$dge <- normLibSizes(bulk$dge)
 bulk$dge$cpm <- cpm(bulk$dge$counts)
 bulk$dge$lcpm <- cpm(bulk$dge$counts, log = TRUE)
+
+## Save unfiltered data
+bulk$prefilt_dge <- bulk$dge
 ```
 
 ## 1.2 Assign gene symbols from reference gtf as gene IDs
 Note: obtaining these names seems only relevant if you are using an Ensembl reference
+
 ```{r assign gene symbols}
 ## STAR output may use Ensembl IDs as gene IDs, in which case, use gtf to assign gene symbols where possible
 geneInfoTab <- read_tsv(here(bulk$config$refDir, "geneInfo.tab"),
@@ -232,9 +237,6 @@ gene_names <- plyr::mapvalues(rownames(bulk$dge$counts),
                               from = geneInfoTab$gene_id,
                               to = geneInfoTab$gene_symbol)
 
-## Save original names and unfiltered data
-bulk$prefilt_dge <- bulk$dge
-
 ## Names are made unique IF you used Ensembl; NCBI reference should already have unique names
 rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
 ```
@@ -242,13 +244,7 @@ rownames(bulk$dge$counts) <- make.names(gene_names, unique=TRUE)
 ## 1.3 - Add design to `bulk` object
 By default, this template uses `grp` for cross-sectional studies and `grp.tPt` for longitudinal studies (aka "group" in the DGElist). Default may not work for your project, so modify as needed. 
 
-This initial design is potentially important for gene filtering, so you should probably include most of the important variables. 
-You can choose a different design later when you perform analyses so that your contrast selection goes smoothly. 
-
-You should not include subjectID in this section, since it will be blocked later. If you are concerned about variables such as batch/technician etc, those can be added.
-
-More complex design example:
-`~ 0 + grp.tPt*sex` (equivalent to `~ 0 + grp.tPt + sex + grp.tPt:sex`)
+You should not include subjectID in this section, since it will be blocked later. If you are concerned about variables such as batch/technician etc, those can be added, as well as other details relevant to the experimental design. For examples of complex designs and contrast building, see `here("notes/contrastExamples.R")`
 
 ```{r set design}
 bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
@@ -258,6 +254,7 @@ bulk$md$design <- stats::model.matrix(~ 0 + group, data = bulk$dge$samples)
 Filter based on the grouping factors or treatment factors involved in differential expression testing
 
 ## 2.1 - Plot initial mapping stats
+
 ```{r mapping_plot, fig.width=10, fig.height=8}
 # save mapping stats plot
 bulk$plots$qc$pMapBins <- mappingBinsPlot(bulk$md$mapBins) +
@@ -274,13 +271,35 @@ bulk$plots$qc$pMapBins
 ```
 
 ## 2.2 - Filter by expression
+Note on filtering:
+The function edgeR::filterByExpr() applies CPM and presence-based filters to the gene table. 
+- By default, any gene with fewer than 10 counts (`min.count`) in X samples is removed. 
+- X is calculated as 70% (`min.prop`) of the *smallest* group size. 
+- Group size is determined by either your model matrix (`design = bulk$md$design`) 
+  or a named grouping variable (`group = bulk$dge$samples$group`)
+    - If smallest group has 10 subjects, 7 samples must have 10 counts for a gene to remain
+    - If smallest group has 4 subjects, 3 samples must have 10 counts for a gene to remain
+- Complex model matrices (esp longitudinal) may have very small group sizes, which would under-filter genes
+- *Aim for 18,000(+/-) genes remaining*
+
 ```{r prep filter count tab}
 ## If `design = bulk$md$design` includes nuisance variables, replace with `group = {factor of biological interest}`
-bulk$md$keep.exprs <- filterByExpr(bulk$prefilt_dge, design = bulk$md$design)
+bulk$md$keep.exprs <- filterByExpr(bulk$prefilt_dge, min.count = 10, min.prop = 0.7, 
+                                   design = bulk$md$design)         # smallest group n in model matrix
+                                   #group = bulk$dge$samples$group)  # smallest group n for specific variable
+
+# check how many genes are being kept
+length(which(bulk$md$keep.exprs))
+
 ```
 
 ### 2.3 - Generate plots for filtering parameters
 Note: I chose to use `bulk$prefilt_dge$counts` instead of `bulk$dge$counts` for easier reproducibility when coming back to this script to regenerate plots
+
+*Future improvements*: How do we want to control plot sizing? 
+- Very large sample sizes stretch these plots out
+- what is the best way to generalize this function and the formatting scripts to accomodate different sample sizes 
+  in a way that is easily adaptable to PDF format
 
 ```{r make filtering plots}
 ## gene filtering
@@ -374,47 +393,12 @@ As a quality check, this section pulls out globin-related genes to check for con
 globinGenes <- c('HBA', 'HBA1', 'HBA2', 'HBB', 'HBD', 'HBE1', 'HBG1', 'HBG2', 'HBM', 'HBQ1', 'HBZ', 'HBZP',
                  'Hbb-y', 'Hbb-bh1', 'Hbb-b1', 'Hbb-b2', 'Hba-z', 'Hba-a1', 'Hba-a2')
 ## globin dataframe
-bulk$plots$qc$pGlobinBars <- bulk$dge$counts %>%
-  as_tibble(rownames = "gene") %>%
-  dplyr::mutate(globin = factor(gene %in% globinGenes, 
-                                levels = c("TRUE","FALSE"))) %>%
-  dplyr::mutate(globin = recode(globin, 
-                                "TRUE" = "globin", "FALSE" = "not_globin")) %>%
-  pivot_longer(cols = -c(gene, globin), 
-               names_to = "sampleID", 
-               values_to = "counts") %>%
-  mutate(sampleID = fct(sampleID, levels = levels(bulk$dge$samples$sampleID))) %>%
-  group_by(sampleID, globin) %>%
-  dplyr::summarize(lib.size = sum(counts)) %>%
-  ungroup() %>%
-  ggplot(aes(x = sampleID, y = lib.size, fill = globin)) +
-  geom_bar(stat="identity") +
-  ylab("Library size (sum of counts)") + xlab("Sample ID") +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size=6))
-
+bulk$plots$qc$pGlobinBars <- plotGlobinBars(countTab = bulk$prefilt_dge$counts,
+                                            globinGenes = globinGenes)
+  
 ## violin plot of percent globin
-bulk$plots$qc$pGlobinVln <- bulk$dge$counts %>%
-  as_tibble(rownames = "gene") %>%
-  dplyr::mutate(globin = factor(gene %in% globinGenes, 
-                                levels = c("TRUE","FALSE"))) %>%
-  dplyr::mutate(globin = recode(globin, 
-                                "TRUE" = "globin", "FALSE" = "not_globin")) %>%
-  pivot_longer(cols = -c(gene, globin), 
-               names_to = "sampleID", 
-               values_to = "counts") %>%
-  mutate(sampleID = fct(sampleID, levels = levels(bulk$dge$samples$sampleID))) %>%
-  group_by(sampleID, globin) %>%
-  dplyr::summarize(lib.size = sum(counts)) %>%
-  ungroup() %>%
-  pivot_wider(id_cols = c(sampleID),
-              names_from = globin, 
-              values_from = lib.size) %>%
-  mutate(globinPct = globin/(globin+not_globin)) %>% 
-  ggplot(aes(x=1,y=globinPct)) +
-  geom_violin(fill = NA) + 
-  geom_sina() + 
-  theme_bw()
+bulk$plots$qc$pGlobinVln <- plotGlobinVln(countTab = bulk$prefilt_dge$counts,
+                                          globinGenes = globinGenes)
 ```
 
 ### 2.4.1 - Plot globin expression

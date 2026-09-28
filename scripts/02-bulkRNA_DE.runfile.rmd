@@ -44,10 +44,22 @@ library(ggplotify)
 library(patchwork)
 library(plotly)
 
-## custom functions
-source(here("R/limmaEdgeR_functions.R")) 
-source(here("R/heatmap_functions.R"))
-source(here("R/QC_functions.R"))
+### note: I am trying out keeping all of my functions in separate R files. 
+###       This does mean they need to be sourced separately, but it makes it a little easier to view and update them 
+#### old:
+#source(here("R/limmaEdgeR_functions.R")) 
+#source(here("R/heatmap_functions.R"))
+#source(here("R/QC_functions.R"))
+
+#### semi-in-use
+source(here("R/fitVoomLm.R"))
+
+#### In use:
+source(here("R/ggplotMDSv2.R"))
+source(here("R/checkRLEv2.R"))
+source(here("R/createResTable.R"))
+source(here("R/getTopDegTbl.R"))
+source(here("R/mappingBinsPlot.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
