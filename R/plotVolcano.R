@@ -8,7 +8,7 @@
 #' @export
 #'
 #' @examples
-PlotVolcano = function(bulk = NULL, 
+plotVolcano = function(bulk = NULL, 
                        method = NULL,
                        contrast = NULL){
   ### util

@@ -60,6 +60,7 @@ source(here("R/checkRLEv2.R"))
 source(here("R/createResTable.R"))
 source(here("R/getTopDegTbl.R"))
 source(here("R/mappingBinsPlot.R"))
+source(here("R/plotVolcano.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -233,7 +234,7 @@ bulk$plots$limma$pMAplot <- ggarrange(plotlist = bulk$plots$limma$indMAplot,
 # Volcano plots
 ## individual plots
 for(i in colnames(bulk$md$contr.matrix)){
-  bulk$plots$limma$indVolcano[[i]] = PlotVolcano(bulk = bulk,
+  bulk$plots$limma$indVolcano[[i]] = plotVolcano(bulk = bulk,
                                                  method = 'limma', 
                                                  contrast = i)
 }
