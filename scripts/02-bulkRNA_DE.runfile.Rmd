@@ -43,6 +43,7 @@ library(ggpubr)
 library(ggplotify)
 library(patchwork)
 library(plotly)
+library(ggnewscale)
 
 ### note: I am trying out keeping all of my functions in separate R files. 
 ###       This does mean they need to be sourced separately, but it makes it a little easier to view and update them 
@@ -509,36 +510,12 @@ bulk$plots$deseq$pMAplot <- ggarrange(plotlist = bulk$plots$deseq$indMAplot,
 # Volcano plot
 ## individual plots
 for(i in colnames(bulk$md$contr.matrix)){
-  bulk$plots$deseq$indVolcano[[i]] <-  bulk$degTab$deseq %>%
-    filter(contrast == i) %>%
-    {
-      ggplot(data = .) +
-        geom_point(data = filter(., !signif),
-                   aes(x = log2FoldChange, y = -log(padj, base = 10)), 
-                   color = "black", size = 0.1) +
-        geom_point(data = filter(., signif), 
-                   aes(x = log2FoldChange, y = -log(padj, base = 10), 
-                       color = signif_dir, text = gene), 
-                   size = 0.2) +
-        theme_bw() +
-        xlim(-max(abs(.$log2FoldChange)), 
-             max(abs(.$log2FoldChange))) +
-        scale_color_manual(values = c("black", "tomato", "dodgerblue"), 
-                           labels = c("No significance", "Upregulated","Downregulated"),
-                           drop = FALSE,
-                           guide = guide_legend(override.aes = list(size = 3))) +
-        labs(color = "Gene Enrichment",
-             title = i,
-             x = "Log2 Fold Change",
-             y = "Adjusted P-value") +
-        geom_vline(xintercept=0, size = .5) +
-        geom_hline(yintercept = -log(0.05, base = 10), size = .5, 
-                   linetype = "dashed", color = "red") +
-        scale_y_continuous(labels = function(i) signif(10^-i,1)) +
-        annotate("text", x = -10, y=-log(0.05, base = 10),size = 3,
-                 vjust = 2, hjust = 0,label = "p = 0.05", color = "red")
-    }
+  bulk$plots$deseq$indVolcano[[i]] = plotVolcano(bulk = bulk,
+                                                 method = 'deseq', 
+                                                 contrast = i)
 }
+
+
 ## combined plots
 bulk$plots$deseq$pVolcano <- ggarrange(plotlist = bulk$plots$deseq$indVolcano, 
                                       ncol = 5, 
