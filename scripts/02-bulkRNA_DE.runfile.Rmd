@@ -369,64 +369,15 @@ bulk$tables$limma$scaleGenes <- as.data.frame(t(scale(t(bulk$dge$lcpm))))
 # loop to create list of plots for each contrast
 for(i in colnames(bulk$md$contr.matrix)){
 
-# defining contrast and pulling out from bulk$md$contr.matrix
-  cmSubset <- bulk$md$contr.matrix %>%
-    as.data.frame() %>%
-    rownames_to_column("group") %>%
-    dplyr::select(group, "comparison" = all_of(i))
-
-# subsetting gene table
-  gene_tbl <- bulk$degTab$limma %>%
-    getTopDegTbl(., contrast_i = i, groupID = "group",
-                 arrange_by = "pvalue", direction = "unequal",
-                 padj_cutoff = NULL, slice_n = 50,
-                 filter_pattern = NULL) %>%
-    dplyr::select(gene, padj, l2fc = log2FoldChange) %>%
-    dplyr::mutate(color = dplyr::case_when(
-      is.na(padj) ~ "grey",
-      padj >= fdr ~ "black",
-      l2fc > 0 ~ "tomato",
-      l2fc < 0 ~ "dodgerblue",
-      TRUE ~ NA_character_))
-
-# getting gene order for heatmap
-  ord <- hclust(dist(bulk$tables$limma$scaleGenes[c(gene_tbl$gene),]))$order
-
-# combining z-score, sample table, and gene table and prepping factors for plotting
- bulk$plots$limma$DEheatmaps[[i]] <- bulk$tables$limma$scaleGenes[c(gene_tbl$gene),] %>%
-    rownames_to_column("gene") %>%
-    tidyr::pivot_longer(!gene,
-                 names_to = "sampleID",
-                 values_to = "zscore")%>%
-    dplyr::inner_join(.,bulk$dge$samples,by="sampleID") %>%
-    dplyr::inner_join(.,gene_tbl, by="gene") %>%
-    dplyr::inner_join(.,cmSubset, by = "group") %>%
-    dplyr::arrange(group,subjectID) %>%
-    dplyr::mutate(
-      group = factor(group, levels = unique(group)),
-      subjectID = factor(subjectID, levels = unique(subjectID)),
-      gene = factor(gene, levels = unique(gene)[ord])) %>%
-   {
-     ggplot(data = .,
-            aes(x = subjectID, y = gene, fill = zscore)) +
-       geom_tile(show.legend = TRUE) +
-       scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato2",
-                            limits = c(min(bulk$tables$limma$scaleGenes),
-                                       max(bulk$tables$limma$scaleGenes))) +
-       facet_grid(~ group,
-                  labeller = labeller(group = newLineLabel),
-                  scales="free_x", space="fixed") +
-       geom_rect(data = subset(., comparison %in% c(1,-1)),
-                 linewidth = 1.5, fill = NA, colour = "black",
-                 xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
-       labs(title = paste0("Top 50 DE Genes in Contrast: ",i),
-            x = NULL, y = NULL) +
-       theme_minimal(base_size = 10) +
-       theme(plot.title = element_text(size = 16, face = "bold"),
-             axis.text.x = element_text(angle = 90, hjust = 1, color = "black"),
-             axis.text.y = element_text(color = .$color[ord], size = 10),
-             strip.text = element_text(size = 10, face = "bold"))
-   }
+ bulk$plots$limma$DEheatmaps[[i]] <- plotHeatmap(bulk = bulk,
+                   genes = NULL,
+                   method = 'limma',
+                   contrast = i,
+                   pairing_bar = TRUE,
+                   comparison_borders = TRUE,
+                   fdr = 0.05,
+                   gene_order = 'rank',
+                   filter_pattern = '^ENSG|^LINC')
 }
 
 ```
@@ -641,65 +592,16 @@ bulk$tables$deseq$scaleGenes <- as.data.frame(t(scale(t(bulk$deseq$normCounts)))
 
 # loop to create list of plots for each contrast
 for(i in colnames(bulk$md$contr.matrix)){
-  
-# defining contrast and pulling out from bulk$md$contr.matrix
-  cmSubset <- bulk$md$contr.matrix %>%
-    as.data.frame() %>%
-    rownames_to_column("group") %>%
-    dplyr::select(group, "comparison" = all_of(i))
-  
-# subsetting gene table
-  gene_tbl <- bulk$degTab$deseq %>%
-    getTopDegTbl(., contrast_i = i, groupID = "group",
-                 arrange_by = "pvalue", direction = "unequal", 
-                 padj_cutoff = NULL, slice_n = 50, 
-                 filter_pattern = NULL) %>%
-    dplyr::select(gene, padj, l2fc = log2FoldChange) %>%
-    dplyr::mutate(color = dplyr::case_when(
-      is.na(padj) ~ "grey",
-      padj >= fdr ~ "black",
-      l2fc > 0 ~ "tomato",
-      l2fc < 0 ~ "dodgerblue",
-      TRUE ~ NA_character_))
 
-# getting gene order for heatmap
-  ord <- hclust(dist(bulk$tables$deseq$scaleGenes[c(gene_tbl$gene),]))$order
-  
-# combining z-score, sample table, and gene table and prepping factors for plotting
- bulk$plots$deseq$DEheatmaps[[i]] <- bulk$tables$deseq$scaleGenes[c(gene_tbl$gene),] %>%
-    rownames_to_column("gene") %>%
-    tidyr::pivot_longer(!gene,
-                 names_to = "sampleID",
-                 values_to = "zscore")%>%
-    dplyr::inner_join(.,bulk$dge$samples,by="sampleID") %>%
-    dplyr::inner_join(.,gene_tbl, by="gene") %>%
-    dplyr::inner_join(.,cmSubset, by = "group") %>%
-    dplyr::arrange(group,subjectID) %>%    
-    dplyr::mutate(
-      group = factor(group, levels = unique(group)),
-      subjectID = factor(subjectID, levels = unique(subjectID)),
-      gene = factor(gene, levels = unique(gene)[ord])) %>%
-   {
-     ggplot(data = ., 
-            aes(x = subjectID, y = gene, fill = zscore)) +
-       geom_tile(show.legend = TRUE) +
-       scale_fill_gradient2(low="dodgerblue3", mid="white", high="tomato2",
-                            limits = c(min(bulk$tables$deseq$scaleGenes),
-                                       max(bulk$tables$deseq$scaleGenes))) +
-       facet_grid(~ group,              
-                  labeller = labeller(group = newLineLabel), 
-                  scales="free_x", space="fixed") +
-       geom_rect(data = subset(., comparison %in% c(1,-1)), 
-                 linewidth = 1.5, fill = NA, colour = "black", 
-                 xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
-       labs(title = paste0("Top 50 DE Genes in Contrast: ",i), 
-            x = NULL, y = NULL) +
-       theme_minimal(base_size = 10) +
-       theme(plot.title = element_text(size = 16, face = "bold"),
-             axis.text.x = element_text(angle = 90, hjust = 1, color = "black"),
-             axis.text.y = element_text(color = .$color[ord], size = 10),
-             strip.text = element_text(size = 10, face = "bold"))          
-   } 
+ bulk$plots$deseq$DEheatmaps[[i]] <- plotHeatmap(bulk = bulk,
+                   genes = NULL,
+                   method = 'deseq',
+                   contrast = i,
+                   pairing_bar = TRUE,
+                   comparison_borders = TRUE,
+                   fdr = 0.05,
+                   gene_order = 'rank',
+                   filter_pattern = '^ENSG|^LINC')
 }
 
 ```

@@ -248,6 +248,64 @@ bulk$plots$gsea$GOBP
 bulk$plots$gsea$CP
 ```
 
+
+## 1.4 - Compare Leading Edge Gene Expression
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+### Initialize Plots storage
+bulk[["plots"]][['gsea_leadingEdgeHM']] = list()
+
+### Get Gene table
+gene_tbl <- bulk$degTab$limma
+
+### for each database (db), and for each comparison (i), and for each top/bottom 3 pathways (j), create heatmap of leading edge genes
+for(db in names(bulk[["gsea"]][["results"]])){  
+
+  ### initialize database specific heatmaps
+  bulk[["plots"]][['gsea_leadingEdgeHM']][[db]] = list()
+  
+  for(i in colnames(bulk$md$contr.matrix)){
+  
+    ### initialize contrast specific results
+    bulk[["plots"]][['gsea_leadingEdgeHM']][[db]][[i]] = list()
+    
+    ### Get Contrast Matrix
+    cmSubset <- bulk$md$contr.matrix %>%
+      as.data.frame() %>%
+      rownames_to_column("group") %>%
+      dplyr::select(group, "comparison" = all_of(i))
+    
+    
+    for(j in bulk[["gsea"]][["sigResults"]][[db]][[i]] %>%
+        #flag_redundant_leading_edge(threshold = 1) %>% filter(!redundant_leading_edge) %>% # this line removes redundant pathways
+        filter(!redundant_leading_edge) %>% # this line removes redundant pathways
+    arrange(desc(NES)) %>%
+    {
+        bind_rows(
+            filter(., NES > 0) %>% slice_head(n = 3),
+            filter(., NES < 0) %>% slice_tail(n = 3)
+        )
+    } %>% .$pathway){
+      
+      ### Get leading edge genes
+      genes = bulk[["gsea"]][["sigResults"]][[db]][[i]][which(bulk[["gsea"]][["sigResults"]][[db]][[i]]$pathway == j),]$leadingEdge  %>% unlist()
+      
+      bulk[["plots"]][['gsea_leadingEdgeHM']][[db]][[i]][[j]] = plotHeatmap(bulk = bulk,
+                   genes = genes,
+                   method = 'limma',
+                   contrast = i,
+                   pairing_bar = TRUE,
+                   comparison_borders = TRUE,
+                   fdr = 0.05,
+                   gene_order = 'none')
+
+
+      
+    }
+  }
+}
+```
+
+
 # 2 - GSVA
 
 ## 2.1 - Run GSVA 
