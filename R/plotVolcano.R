@@ -18,8 +18,8 @@ plotVolcano = function(bulk = NULL,
   if (is.null(bulk)) {
     stop("`bulk` list object must be provided with degTab populated.")
   }
-  if (is.null(method) | method %nin% c('limma', 'deseq')) {
-    stop("`method` must be either `limma` or `deseq`.")
+  if (is.null(method)) {
+    stop("`method` not provided; usually `limma` or `deseq`.")
   }
   if (is.null(contrast)) {
     stop("`contrast` is NULL. Please provide a contrast.")

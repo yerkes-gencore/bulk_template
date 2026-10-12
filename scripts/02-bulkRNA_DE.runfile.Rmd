@@ -62,6 +62,7 @@ source(here("R/createResTable.R"))
 source(here("R/getTopDegTbl.R"))
 source(here("R/mappingBinsPlot.R"))
 source(here("R/plotVolcano.R"))
+source(here("R/plotHeatmap.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {

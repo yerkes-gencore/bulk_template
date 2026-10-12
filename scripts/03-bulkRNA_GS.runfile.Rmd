@@ -48,6 +48,7 @@ library(plotly)
 source(here("R/old/limmaEdgeR_functions.R")) 
 source(here("R/old/heatmap_functions.R"))
 source(here("R/old/QC_functions.R"))
+source(here("R/flag_redundant_leading_edge.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -158,6 +159,7 @@ for(i in c("H","GOBP","CP")){
     df <- x %>%
       as_tibble() %>%
       filter(pval < 0.1) %>%
+      flag_redundant_leading_edge(threshold = 1) %>% # this line flags redundant pathways
       dplyr::mutate(term = str_replace_all(string = pathway, 
                                            pattern = "_", 
                                            replacement = " "),
@@ -175,6 +177,7 @@ for(i in c("H","GOBP","CP")){
 for(j in c("H","GOBP","CP")){
   for(i in unique(bulk$gsea$resTab$contrast)){
     bulk$plots$gsea[[j]][[i]] <- bulk$gsea$sigResults[[j]][[i]] %>%
+      #filter(!redundant_leading_edge) %>%          # filter out redundant pathways
       ggplot(aes(x = NES, y = fct_reorder(term, NES), 
               #   size = propLEG,          # proportion of leading-edge genes per set
                  size = n_leading_edge,  # absolute number of leading-edge genes
@@ -201,6 +204,7 @@ df <- bind_rows(lapply(x, function(y){
     df <- y %>%
       as_tibble() %>%
       filter(pval < 0.1) %>%
+      flag_redundant_leading_edge(threshold = 1) %>%  # this line flags redundant pathways
       dplyr::mutate(term = str_replace_all(string = pathway, 
                                            pattern = "_", 
                                            replacement = " "),
@@ -212,6 +216,7 @@ plots <- list()
   for(i in unique(bulk$gsea$resTab$contrast)){
  plots[[i]] <- df %>%
     filter(contrast %in% i) %>%
+    #filter(!redundant_leading_edge) %>% # this line removes redundant pathways
     ggplot(aes(x = NES, y = fct_reorder(term, NES), 
               #   size = propLEG,          # proportion of leading-edge genes per set
                  size = n_leading_edge,  # absolute number of leading-edge genes
@@ -276,7 +281,6 @@ for(db in names(bulk[["gsea"]][["results"]])){
     
     
     for(j in bulk[["gsea"]][["sigResults"]][[db]][[i]] %>%
-        #flag_redundant_leading_edge(threshold = 1) %>% filter(!redundant_leading_edge) %>% # this line removes redundant pathways
         filter(!redundant_leading_edge) %>% # this line removes redundant pathways
     arrange(desc(NES)) %>%
     {

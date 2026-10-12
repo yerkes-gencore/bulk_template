@@ -22,6 +22,7 @@ plotHeatmap = function(bulk = NULL,
                        comparison_borders = TRUE,
                        fdr = 0.05,
                        gene_order = 'rank',
+                       contrast_matrix = 'contr.matrix',
                        ...){
   ### util
   `%nin%` = Negate(`%in%`)
@@ -33,16 +34,16 @@ plotHeatmap = function(bulk = NULL,
   if (is.null(genes)) {
     warning("`genes` vector is NULL. Using DEGs instead.")
   }
-  if (is.null(method) | method %nin% c('limma', 'deseq')) {
-    stop("`method` must be either `limma` or `deseq`.")
+  if (is.null(method)) {
+    stop("`method` not provided; usually `limma` or `deseq`.")
   }
   if (is.null(contrast)) {
     stop("`contrast` is NULL. Please provide a contrast.")
   }else(con = contrast)
-  
+
   
   # defining contrast and pulling out from bulk$md$contr.matrix
-  cmSubset <- bulk$md$contr.matrix %>%
+  cmSubset <- bulk$md[[contrast_matrix]] %>%
     as.data.frame() %>%
     rownames_to_column("group") %>%
     dplyr::select(group, "comparison" = all_of(con))
