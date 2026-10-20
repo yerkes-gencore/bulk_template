@@ -1,0 +1,284 @@
+---
+title: "`r bulk$config$project`: Report `r bulk$config$reportNumber` - GS"
+author: |
+  | `r bulk$config$author`
+  | ENPRC Genomics Core
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc_depth: '3'
+    df_print: paged
+  rmdformats::robobook:
+    fig_width: 9
+    toc_depth: 3
+  pdf_document:
+    df_print: kable
+    latex_engine: lualatex
+always_allow_html: true
+params:
+  method: limma/EdgeR
+  compare: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=TRUE, message=TRUE,
+                      fig.width = 8, fig.height = 6,
+                      cache=FALSE, cache.lazy = FALSE,
+                      fig.align = 'center')#, include=FALSE)
+library(kableExtra)
+```
+
+```{=html}
+<style type="text/css">
+.book .book-body .page-inner {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+details > summary {
+  display: list-item;
+}
+</style>
+```
+# 1. Contrast Interpretation
+
+The contrasts used in this analysis are designed to distinguish differences between diet groups at each visit from longitudinal changes between visits.
+
+**1. High vs. Low Processed Diet Average (H_vs_L)**
+   Identifies genes and pathways that differ between the High- and Low-processed diet groups when considering the          average difference across V1 and V2.
+
+**2. Highly Processed Diet: V2 vs. V1 (H_V2vsV1)**
+   Identifies genes and pathways that change between Visit 1 and Visit 2 within the High-diet group.
+   
+**3. Low Processed Diet: V2 vs. V1 (L_V2vsV1)**
+   Identifies genes and pathways that change between Visit 1 and Visit 2 within the Low-diet group.
+   
+**4. High vs. Low Processed Diet at V1 (V1_HvsL)**
+   Identifies genes and pathways whose expression differs between the High- and Low-diet groups at Visit 1.
+        
+**5. High vs. Low Processed Diet at V2 (V2_HvsL)**
+   Identifies genes and pathways whose expression differs between the High- and Low-diet groups at Visit 2.
+        
+   
+# 1. GSEA DotPlots
+```{r cGSEA, eval=TRUE}
+
+heatmapChunk_GSEA <- c(
+  '## {{j}} {.tabset} \n\n',
+  '. \n\n'
+)
+
+heatmapChunkLoop_GSEA <- c(
+  '```{r, fig.width = 10, fig.height = 8} \n',
+  'ggarrange(bulk$plots$gsea[["{{j}}"]][["{{i}}"]], legend = "right") \n',
+'``` \n')
+
+
+```
+
+```{r GSEAplots, eval=TRUE, results='asis'}
+
+# dotplots
+
+for(j in names(bulk$plots$gsea)){
+  cat(knitr::knit_child(text = knitr::knit_expand(
+        text = heatmapChunk_GSEA,
+        j = ifelse(j == "H",'Hallmark', 
+                   ifelse(j == 'GOBP','Gene Ontology Biological Processes',"Cononical Pathways"))
+      ), quiet = TRUE), sep = '\n')
+  out <- NULL
+for(i in names(bulk$plots$gsea[[j]])){
+  out <- c(out,paste0("### ", i, "\n\n"), knitr::knit_expand(text = heatmapChunkLoop_GSEA))
+}
+  cat(knitr::knit_child(text = out, quiet = TRUE), sep = "\n")
+}
+
+```
+
+
+# 2. GSEA Leading Edge Genes
+```{r cGSEA_leading_edge, eval=TRUE}
+heatmapChunk_GSEA_leading_edge <- c(
+  '## {{j}} {.tabset} \n\n'
+)
+
+heatmapChunk_Contrast_GSEA_leading_edge <- c(
+  '### {{con}} {.tabset} \n\n'
+)
+
+heatmapChunkLoop_GSEA_leading_edge <- c(
+  '#### {{i}} \n\n',
+  '```{r GSEA_{{j}}_{{con}}_{{i}}, fig.width=10, fig.height=8, echo=FALSE} \n',
+  'ggarrange(bulk[["plots"]][["gsea_leadingEdgeHM"]][["{{j}}"]][["{{con}}"]][["{{i}}"]], legend = "right") \n',
+  '``` \n\n'
+)
+```
+
+```{r GSEA_leading_edge_plots, eval=TRUE, results='asis'}
+
+for (j in names(bulk$plots$gsea_leadingEdgeHM)) {
+  
+  # ============================================================
+  # LEVEL 1: Gene set database
+  # ============================================================
+  
+  j_label <- ifelse(
+    j == "H",
+    "Hallmark",
+    ifelse(
+      j == "GOBP",
+      "Gene Ontology Biological Processes",
+      "Canonical Pathways"
+    )
+  )
+  
+  cat(
+    knitr::knit_child(
+      text = knitr::knit_expand(
+        text = heatmapChunk_GSEA_leading_edge,
+        j = j_label
+      ),
+      quiet = TRUE
+    ),
+    sep = "\n"
+  )
+  
+  
+  # ============================================================
+  # LEVEL 2: Contrasts
+  # ============================================================
+  
+  for (con in names(
+    bulk[["plots"]][["gsea_leadingEdgeHM"]][[j]]
+  )) {
+    
+    cat(
+      knitr::knit_child(
+        text = knitr::knit_expand(
+          text = heatmapChunk_Contrast_GSEA_leading_edge,
+          con = con
+        ),
+        quiet = TRUE
+      ),
+      sep = "\n"
+    )
+    
+    
+    # ==========================================================
+    # LEVEL 3: Pathways
+    # ==========================================================
+    
+    for (i in names(
+      bulk[["plots"]][["gsea_leadingEdgeHM"]][[j]][[con]]
+    )) {
+      
+      cat(
+        knitr::knit_child(
+          text = knitr::knit_expand(
+            text = heatmapChunkLoop_GSEA_leading_edge,
+            j = j,
+            con = con,
+            i = i
+          ),
+          quiet = TRUE
+        ),
+        sep = "\n"
+      )
+    }
+  }
+}
+```
+
+
+# 3. GSEA Leading Edge Trajectories
+```{r cGSEA_Traj, eval=TRUE}
+heatmapChunk_GSEA_traj <- c(
+  '## {{j}} {.tabset} \n\n'
+)
+
+heatmapChunk_Contrast_GSEA_traj <- c(
+  '### {{con}} {.tabset} \n\n'
+)
+
+heatmapChunkLoop_GSEA_traj <- c(
+  '#### {{i}} \n\n',
+  '```{r GSEA_{{j}}_{{con}}_{{i}}_Traj, fig.width=12, fig.height=10, echo=FALSE} \n',
+  'ggarrange(bulk[["plots"]][["gsea_leadingEdgeTraj"]][["{{j}}"]][["{{con}}"]][["{{i}}"]], legend = "right") \n',
+  '``` \n\n'
+)
+```
+
+```{r GSEA_Trajectory_plots, eval=TRUE, results='asis'}
+
+for (j in names(bulk$plots$gsea_leadingEdgeTraj)) {
+  
+  # ============================================================
+  # LEVEL 1: Gene set database
+  # ============================================================
+  
+  j_label <- ifelse(
+    j == "H",
+    "Hallmark",
+    ifelse(
+      j == "GOBP",
+      "Gene Ontology Biological Processes",
+      "Canonical Pathways"
+    )
+  )
+  
+  cat(
+    knitr::knit_child(
+      text = knitr::knit_expand(
+        text = heatmapChunk_GSEA_traj,
+        j = j_label
+      ),
+      quiet = TRUE
+    ),
+    sep = "\n"
+  )
+  
+  
+  # ============================================================
+  # LEVEL 2: Contrasts
+  # ============================================================
+  
+  for (con in names(
+    bulk[["plots"]][["gsea_leadingEdgeTraj"]][[j]]
+  )) {
+    
+    cat(
+      knitr::knit_child(
+        text = knitr::knit_expand(
+          text = heatmapChunk_Contrast_GSEA_traj,
+          con = con
+        ),
+        quiet = TRUE
+      ),
+      sep = "\n"
+    )
+    
+    
+    # ==========================================================
+    # LEVEL 3: Pathways
+    # ==========================================================
+    
+    for (i in names(
+      bulk[["plots"]][["gsea_leadingEdgeTraj"]][[j]][[con]]
+    )) {
+      
+      cat(
+        knitr::knit_child(
+          text = knitr::knit_expand(
+            text = heatmapChunkLoop_GSEA_traj,
+            j = j,
+            con = con,
+            i = i
+          ),
+          quiet = TRUE
+        ),
+        sep = "\n"
+      )
+    }
+  }
+}
+```

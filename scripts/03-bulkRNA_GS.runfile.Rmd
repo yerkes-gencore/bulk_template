@@ -44,11 +44,14 @@ library(ggh4x)
 library(patchwork)
 library(plotly)
 
-## custom functions
+## OLD custom functions
 source(here("R/old/limmaEdgeR_functions.R")) 
 source(here("R/old/heatmap_functions.R"))
 source(here("R/old/QC_functions.R"))
+
+## In use 
 source(here("R/flag_redundant_leading_edge.R"))
+source(here("R/plotHeatmap.R"))
 
 # I personally like to see my month name, even if it isn't ISO compliant
 getDate <- function() {
@@ -62,6 +65,28 @@ This runfile is where we can run all the code required for the analysis, which w
 
 `03-bulkRNA_GS.runfile.Rmd` computes gene set analyses, including GSEA and GSVA. In the future, this may include other interesting plots and/or analyses such as pathway/network analyses once they are automatable
 
+## Custom functions....
+```{r}
+## I know, I am trying to get rid of functions. But this is a super useful one for automation.
+### Store code as functions when the input is something you want to share in the format file
+getSourceText <- function(func,a,b) {
+  src <- attr(func, "srcref") # pull out function text
+  if (is.null(src)) {return("Something went wrong. Ensure R session has `options(keep.source = TRUE)`")}
+  raw_text <- as.character(src)
+  trim_text <- tail(head(raw_text, -a), -b) # remove lines that encode extra function info 
+  formatted_text <- paste(trim_text, collapse = "\n") # convert function text to string
+  return(formatted_text)
+}
+
+# My group names in the strip text are too long, so I am labeling them with
+# a newline
+newLineLabel <- function(string) {
+  string <- gsub("\\."," \n",string)
+  string
+}
+```
+
+
 # Part 0 - Set-up 
 *Run set-up steps manually*
 
@@ -73,12 +98,12 @@ bulk <- read_rds(here("rds/report-02/bulk-2026Apr16.rds"))
 ## 0.2 - Decide whether you will use DESeq2 or limma/EdgeR results
 ```{r choose method, eval = FALSE}
 # limma 
-# bulk$gsea$resTab <- bulk$degTab$limma
-#bulk$gsva$exprTab <- bulk$dge$lcpm
+bulk$gsea$resTab <- bulk$degTab$limma
+bulk$gsva$exprTab <- bulk$dge$lcpm
 
 # DESeq2
-bulk$gsea$resTab <- bulk$degTab$deseq
-bulk$gsva$exprTab <- log(bulk$deseq$normCounts +1, base = 2)
+#bulk$gsea$resTab <- bulk$degTab$deseq
+#bulk$gsva$exprTab <- log(bulk$deseq$normCounts +1, base = 2)
 ```
 
 ## 0.3 - Prep gene set lists
@@ -177,10 +202,10 @@ for(i in c("H","GOBP","CP")){
 for(j in c("H","GOBP","CP")){
   for(i in unique(bulk$gsea$resTab$contrast)){
     bulk$plots$gsea[[j]][[i]] <- bulk$gsea$sigResults[[j]][[i]] %>%
-      #filter(!redundant_leading_edge) %>%          # filter out redundant pathways
+      filter(!redundant_leading_edge) %>%          # filter out redundant pathways
       ggplot(aes(x = NES, y = fct_reorder(term, NES), 
-              #   size = propLEG,          # proportion of leading-edge genes per set
-                 size = n_leading_edge,  # absolute number of leading-edge genes
+                 size = propLEG,          # proportion of leading-edge genes per set
+                 #size = n_leading_edge,  # absolute number of leading-edge genes
                  color = pval)) +
       geom_point() + ggtitle(paste(i,j,sep = "_")) +
       scale_color_gradient(low = "red", high = "blue") +
@@ -216,10 +241,10 @@ plots <- list()
   for(i in unique(bulk$gsea$resTab$contrast)){
  plots[[i]] <- df %>%
     filter(contrast %in% i) %>%
-    #filter(!redundant_leading_edge) %>% # this line removes redundant pathways
+    filter(!redundant_leading_edge) %>% # this line removes redundant pathways
     ggplot(aes(x = NES, y = fct_reorder(term, NES), 
-              #   size = propLEG,          # proportion of leading-edge genes per set
-                 size = n_leading_edge,  # absolute number of leading-edge genes
+                 size = propLEG,          # proportion of leading-edge genes per set
+                 #size = n_leading_edge,  # absolute number of leading-edge genes
                  color = pval)) +
       geom_point() + ggtitle(paste(i,j,sep = "_")) +
       scale_color_gradient(low = "red", high = "blue") +
@@ -307,6 +332,238 @@ for(db in names(bulk[["gsea"]][["results"]])){
     }
   }
 }
+```
+
+### 1.4.1 - view hallmark GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4}
+bulk$plots$gsea_leadingEdgeHM$H$HvsL
+```
+
+### 1.4.2 - view gene ontology GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea_leadingEdgeHM$GOBP$HvsL
+```
+
+### 1.4.3 - view canonical GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea_leadingEdgeHM$CP$HvsL
+```
+
+
+## 1.5 Leading Edge gene trajectories
+```{r, fig.width=14, fig.height=16, message=FALSE, warning=FALSE}
+
+# Long dataframe from CPM and sample data tables
+dfCPM <- as.data.frame(bulk$dge$cpm) %>% 
+  tibble::rownames_to_column("gene") %>%
+  tidyr::pivot_longer(!gene, names_to = "sampleID", values_to = "cpmExpr") %>%
+  dplyr::inner_join(.,bulk$dge$samples, by="sampleID") %>% 
+  dplyr::mutate(type = "sample") %>%
+  dplyr::select(gene, sampleID, subjectID, grp, tPt, cpmExpr, type)
+
+# Add averaged values per group and timepoint
+dfCPM <- rbind(dfCPM, dfCPM %>%
+                 dplyr::group_by(gene, grp, tPt) %>%
+                 dplyr::summarize(cpmExpr = mean(cpmExpr)) %>%
+                 dplyr::mutate(subjectID = paste(grp,"avg",sep = "."),
+                               sampleID = paste(grp,"avg",tPt,sep = "."),
+                               type = "avg"))
+
+
+## I wanted manageable gaps between days for longitudinal plotting, so scaled manually
+day_key <- as.data.frame(cbind(
+  visit = unique(dfCPM$tPt),
+  visitInt = as.numeric(gsub("V","",unique(dfCPM$tPt))), 
+  visitIntAnnot = c("Visit1", "Visit2"), 
+  modVisitInt = c(1,2))) %>%
+  dplyr::mutate(VisitInt = as.numeric(visitInt), 
+                modVisitInt = as.numeric(modVisitInt))
+
+
+# named vector for per-subject color code
+subjectCol <- dfCPM %>% 
+  dplyr::select(subjectID,grp) %>% 
+  unique() %>%
+  dplyr::mutate(color = case_when(
+    grp == "H" ~ "tomato3",
+    grp == "L" ~ "dodgerblue3")) %>% 
+  dplyr::pull(color) %>% 
+  setNames(unique(dfCPM$subjectID))
+
+# named vector for group colors
+groupCol <- c("H" = "tomato3",
+              "L" = "dodgerblue3")
+
+### Initialize Plots storage
+bulk[["plots"]][['gsea_leadingEdgeTraj']] = list()
+
+### for each database (db), and for each comparison (i), and for each top/bottom 3 pathways (j), create heatmap of leading edge genes
+for(db in names(bulk[["gsea"]][["results"]])){  
+
+  ### initialize database specific heatmaps
+  bulk[["plots"]][['gsea_leadingEdgeTraj']][[db]] = list()
+  
+  for(i in colnames(bulk$md$contr.matrix)){
+  
+    ### initialize contrast specific results
+    bulk[["plots"]][['gsea_leadingEdgeTraj']][[db]][[i]] = list()
+    
+    ### Get Contrast Matrix
+    cmSubset <- bulk$md$contr.matrix %>%
+      as.data.frame() %>%
+      rownames_to_column("group") %>%
+      dplyr::select(group, "comparison" = all_of(i))
+    
+    
+    for(j in bulk[["gsea"]][["sigResults"]][[db]][[i]] %>%
+        #flag_redundant_leading_edge(threshold = 1) %>% filter(!redundant_leading_edge) %>% # this line removes redundant pathways
+        filter(!redundant_leading_edge) %>% # this line removes redundant pathways
+    arrange(desc(NES)) %>%
+    {
+        bind_rows(
+            filter(., NES > 0) %>% slice_head(n = 3),
+            filter(., NES < 0) %>% slice_tail(n = 3)
+        )
+    } %>% .$pathway){
+      
+      ### Get 20 leading edge genes
+      geneVec = bulk[["gsea"]][["sigResults"]][[db]][[i]][which(bulk[["gsea"]][["sigResults"]][[db]][[i]]$pathway == j),]$leadingEdge  %>% unlist() %>% .[1:20]
+      
+      ### Plot trajectories
+      bulk[["plots"]][['gsea_leadingEdgeTraj']][[db]][[i]][[j]] = dfCPM %>%
+  dplyr::filter(gene %in% geneVec) %>% 
+  full_join(as.data.frame(day_key), by = c("tPt" = "visit")) %>%
+  dplyr::mutate(
+    gene = factor(gene, levels = geneVec)
+  ) %>%
+  {
+    ggplot(
+      .,
+      aes(
+        x = modVisitInt,
+        y = cpmExpr,
+        color = subjectID,
+        fill = grp
+      )
+    ) +
+      theme_classic() +
+      theme(
+        legend.position = "top",
+        axis.text.x = element_text(
+          angle = 90,
+          vjust = 0.5,
+          hjust = 1
+        )
+      ) +
+      
+      # Injection days
+      geom_vline(
+        xintercept = c(1, 2),
+        size = .3,
+        linetype = "dashed",
+        color = "black"
+      ) +
+      
+      geom_line(
+        aes(
+          linewidth = type,
+          alpha = type
+        )
+      ) +
+      
+      scale_linewidth_manual(
+        values = c(
+          "avg" = 0.8,
+          "sample" = 0.1
+        )
+      ) +
+      
+      scale_alpha_manual(
+        values = c(
+          "avg" = 1,
+          "sample" = 0.5
+        )
+      ) +
+      
+      # Point only at the final visit for each subject
+      geom_point(
+        data = ~ .x %>%
+          dplyr::group_by(subjectID, gene) %>%
+          dplyr::filter(dplyr::n() == 1) %>%
+          dplyr::ungroup(),
+        aes(
+          fill = grp,
+          alpha = type
+        ),
+        shape = 21,
+        size = 2
+      ) +
+      
+      scale_color_manual(
+        values = subjectCol,
+        drop = FALSE
+      ) +
+      
+      scale_fill_manual(
+        values = groupCol,
+        drop = FALSE,
+        guide = guide_legend(
+          override.aes = list(
+            alpha = 1,
+            shape = 21,
+            color = NA,
+            size = 3
+          )
+        )
+      ) +
+      
+      labs(
+        title = paste(i, " DEGs"),
+        x = "Visits",
+        y = "CPM",
+        fill = "Group"
+      ) +
+      
+      guides(
+        color = "none",
+        alpha = "none",
+        linewidth = "none"
+      ) +
+      
+      scale_x_continuous(
+        breaks = unique(day_key$modVisitInt),
+        labels = unique(day_key$visitIntAnnot)
+      ) +
+      
+      facet_wrap(
+        ~gene,
+        ncol = 4,
+        scales = "free_y"
+      )
+  }
+      
+    }
+  }
+}
+
+
+
+
+```
+
+### 1.5.1 - view hallmark GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=4}
+bulk$plots$gsea_leadingEdgeTraj$H$HvsL
+```
+
+### 1.5.2 - view gene ontology GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea_leadingEdgeTraj$GOBP$HvsL
+```
+
+### 1.5.3 - view canonical GS
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=8}
+bulk$plots$gsea_leadingEdgeTraj$CP$HvsL
 ```
 
 
@@ -466,6 +723,7 @@ bulk$plots$gsva$contrasts$GOBP
 bulk$plots$gsva$contrasts$CP
 ```
 
+
 # 3 - Export objects
 
 ## 3.1 - Prep for export
@@ -499,7 +757,7 @@ resTab_filename_GSEA <- paste0(
 writexl::write_xlsx(lapply(bulk$gsea$results, function(x){bind_rows(x, .id = "contrast")}), here("outputs", subdir, resTab_filename_GSEA))
 ```
 
-## 3.3 - Export GSVA results
+## 3.4 - Export GSVA results
 ```{r}
 
 write.xlsx(list(
@@ -510,7 +768,7 @@ write.xlsx(list(
 ```
 
 
-### 1.4 - Export results table with all contrasts in a wide format as excel file
+### 3.5 - Export results table with all contrasts in a wide format as excel file
 ```{r}
 test <- bulk$gsea$results %>%
   lapply(., function(x) {
@@ -551,3 +809,18 @@ gsea_results_fmt %>%
 ```
 
 
+# 4 - Render report
+## 4.1 - Report name
+```{r render}
+report_filename <- paste0(bulk$config$project, "-", 
+                          bulk$config$reportNumber, "-",
+                          format(Sys.Date(), "%Y%b%d"))
+```
+
+## 4.2 - HTML
+```{r renderHTML}
+rmarkdown::render(input = here("scripts/03-bulkRNA_GS.format.Rmd"),
+                  output_file = paste0(report_filename, ".html"),
+                  output_dir = here('reports'),
+                  output_format = "rmdformats::robobook")
+```
