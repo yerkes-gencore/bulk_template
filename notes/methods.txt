@@ -1,5 +1,14 @@
-Sequencing data was aligned to the NCBI reference genome for Macaca mulatta (RefSeq: GCF_049350105.2) [1] using STAR 2.7.9a [2] in '--quantMode GeneCounts' mode, and transcript count tables were imported into RStudio (R v4.5.3) [3] for analysis. Data wrangling and figure generation used R packages tidyverse [4] and ggplot2 [5].
-Quality processing and differential gene expression analysis was performed using the packages edgeR v4.8.2 [6] and limma v3.66.0 [7] (as follows. Count tables were filtered for low-abundance and/or low-occurrence genes (filterByExpr) and fit to a linear model (stats::model.matrix; E ~ group.timepoint) with subject blocked and sample.weights=TRUE (voomLmFit). Empirical Bayes statistics were calculated for the model fit (eBayes), contrasts between experimental conditions were defined (makeContrasts), and differentially expressed genes (adjusted P < 0.05) were extracted per contrast (contrasts.fit). Principal Component Analysis ordinations were generated with the top 500 variable genes across samples using limma function plotMDS. Gene set enrichment analysis per contrast was performed using R package fgsea v1.36.2 [8] on Gene Ontology: Biological Processes [9,10] gene sets downloaded with R package msigdbr v26.1.0 [11]. 
+Sequencing data was aligned to the NCBI reference genome for Macaca mulatta (RefSeq: GCF_049350105.2) [1] using STAR 2.7.9a [2] 
+in '--quantMode GeneCounts' mode, and transcript count tables were imported into RStudio (R v4.5.3) [3] for analysis. 
+Data wrangling and figure generation used R packages tidyverse [4] and ggplot2 [5].
+Quality processing and differential gene expression analysis was performed using the packages edgeR v4.8.2 [6] and 
+limma v3.66.0 [7] (as follows. Count tables were filtered for low-abundance and/or low-occurrence genes (filterByExpr) 
+and fit to a linear model (stats::model.matrix; E ~ group.timepoint) with subject blocked and sample.weights=TRUE (voomLmFit). 
+Empirical Bayes statistics were calculated for the model fit (eBayes), contrasts between experimental conditions were defined 
+(makeContrasts), and differentially expressed genes (adjusted P < 0.05) were extracted per contrast (contrasts.fit). Principal 
+Component Analysis ordinations were generated with the top 500 variable genes across samples using limma function plotMDS. 
+Gene set enrichment analysis per contrast was performed using R package fgsea v1.36.2 [8] on 
+Gene Ontology: Biological Processes [9,10] gene sets downloaded with R package msigdbr v26.1.0 [11]. 
 
 References
 1.	Zhang S., et al. Complex subtelomeric architectures in a complete rhesus macaque reference genome. Cell, 2026 Aug 6;189(16):4909-4921.e15.
