@@ -76,7 +76,7 @@ plotVolcano = function(bulk = NULL,
             color = "Significance (padj < 0.05)",
             title = con,
             x = "Log2 Fold Change",
-            y = "p-value"
+            y = "-Log10(p-value)"
           ) +
           geom_vline(xintercept = 0, linewidth = 0.5)
       }
